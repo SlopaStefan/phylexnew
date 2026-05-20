@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "scm": {
+    "type": "GitHub"
+  },
+  "env": {
+    "SCM_DO_BUILD_DURING_DEPLOYMENT": "true"
+  },
+  "deployment": {
+    "buildCommands": [
+      "pip install -r requirements.txt"
+    ]
+  }
+}

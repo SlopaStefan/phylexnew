@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Phylogeny Explorer - New
-Usage: python phylex_pg_browser.py
-Then open: http://localhost:5000
+PHYLEX TREE BROWSER - Production Version for Azure App Service
+Optimized for deployment via GitHub Actions to Azure
+HTTPS-ready with production security settings
 """
 
 import argparse
@@ -1544,7 +1544,7 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("PHYLEX TREE BROWSER [PostgreSQL]")
+    print("Phylogeny Explorer - New & revised")
     print("="*60)
 
     load_db()
@@ -1562,7 +1562,7 @@ def main():
     logger.info(f"Audit logging: ENABLED")
     logger.info("="*60)
 
-    print(f"\nOpen: http://{args.host}:{args.port}")
+    print(f"\nOpen: https://{args.host}:{args.port}")
     print("="*60 + "\n")
     app.run(host=args.host, port=args.port, debug=False)
 

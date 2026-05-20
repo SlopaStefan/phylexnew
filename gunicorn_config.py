@@ -35,3 +35,9 @@ tmp_upload_dir = None
 # SSL (Azure handles this)
 forwarded_allow_ips = '*'
 proxy_allow_ips = '*'
+def on_starting(server):
+    import logging
+    # Force the Azure SDK and underlying connection libraries to only report critical errors
+    logging.getLogger('azure').setLevel(logging.WARNING)
+    logging.getLogger('azure.monitor').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)

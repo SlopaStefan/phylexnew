@@ -1,0 +1,15 @@
+# Python runtime
+python-3.11
+
+# Web framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Database
+psycopg2-binary==2.9.9
+
+# Security
+bcrypt==4.1.2
+
+# Production server
+gunicorn==21.2.0

@@ -43,7 +43,7 @@ app.config.update(
 
 # -- Database configuration --
 PG_CONFIG_READONLY = {
-    'host': os.environ.get('DB_HOST', 'localhost'),
+    'host': os.environ.get('DB_HOST', 'phylex.postgres.database.azure.com'),
     'port': int(os.environ.get('DB_PORT', 5432)),
     'database': os.environ.get('DB_NAME', 'phylex'),
     'user': os.environ.get('DB_USER_RO', 'phylexro'),
@@ -52,7 +52,7 @@ PG_CONFIG_READONLY = {
 }
 
 PG_CONFIG_WRITE = {
-    'host': os.environ.get('DB_HOST', 'localhost'),
+    'host': os.environ.get('DB_HOST', 'phylex.postgres.database.azure.com'),
     'port': int(os.environ.get('DB_PORT', 5432)),
     'database': os.environ.get('DB_NAME', 'phylex'),
     'user': os.environ.get('DB_USER', 'phylex'),

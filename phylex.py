@@ -10,7 +10,6 @@ import argparse
 import csv
 import io
 import secrets
-import hashlib
 import os
 import re
 import logging
@@ -35,34 +34,33 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
 
 # Security: Session configuration
 app.config.update(
-    SESSION_COOKIE_SECURE=False,  # Set True in production with HTTPS
+    SESSION_COOKIE_SECURE=True,  # Set True in production with HTTPS
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=3600  # 1 hour timeout
 )
 
 # -- Database configuration --
+# SECURITY: All credentials and connection details must be set via environment variables
+# Required environment variables:
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS, DB_USER_RO, DB_PASS_RO
 PG_CONFIG_READONLY = {
-    'host': os.environ.get('DB_HOST', 'phylex.postgres.database.azure.com'),
-    'port': int(os.environ.get('DB_PORT', 5432)),
-    'database': os.environ.get('DB_NAME', 'phylex'),
-    'user': os.environ.get('DB_USER_RO', 'phylexro'),
-    'password': os.environ.get('DB_PASS_RO', 'phylexro'),
+    'host': os.environ.get('DB_HOST'),
+    'port': int(os.environ.get('DB_PORT', '5432')),
+    'database': os.environ.get('DB_NAME'),
+    'user': os.environ.get('DB_USER_RO'),
+    'password': os.environ.get('DB_PASS_RO'),
     'client_encoding': 'UTF8'
 }
 
 PG_CONFIG_WRITE = {
-    'host': os.environ.get('DB_HOST', 'phylex.postgres.database.azure.com'),
-    'port': int(os.environ.get('DB_PORT', 5432)),
-    'database': os.environ.get('DB_NAME', 'phylex'),
-    'user': os.environ.get('DB_USER', 'phylex'),
-    'password': os.environ.get('DB_PASS', 'phylex'),
+    'host': os.environ.get('DB_HOST'),
+    'port': int(os.environ.get('DB_PORT', '5432')),
+    'database': os.environ.get('DB_NAME'),
+    'user': os.environ.get('DB_USER'),
+    'password': os.environ.get('DB_PASS'),
     'client_encoding': 'UTF8'
 }
-
-def hash_password(password):
-    """Simple password hashing - use bcrypt in production"""
-    return hashlib.sha256(password.encode()).hexdigest()
 
 def get_client_ip():
     """Get the real client IP address, handling proxies"""
@@ -373,7 +371,7 @@ HTML_TEMPLATE = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Phylex Browser [PostgreSQL]</title>
+<title>Phylogeny Explorer New & Revised</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color:#e6edf3; overflow:hidden; }

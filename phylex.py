@@ -403,13 +403,13 @@ HTML_TEMPLATE = """
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color:#e6edf3; overflow:hidden; }
-.header { background:#13294b; border-bottom:2px solid #1d3a5f; padding:14px 20px; display:flex; align-items:center; gap:20px; }
+.header { background:#13294b; border-bottom:2px solid #1d3a5f; padding:14px 20px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
 .header h1 { font-size:22px; color:#667eea; margin:0; }
 .header-stats { margin-left:auto; display:flex; gap:16px; font-size:13px; color:#8b949e; }
 .stat-item { display:flex; flex-direction:column; align-items:flex-end; }
 .stat-value { font-size:20px; font-weight:600; color:#48bb78; }
 .stat-label { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
-.search-wrap { position:relative; flex:1; max-width:600px; }
+.search-wrap { position:relative; flex:1; max-width:600px; min-width:200px; }
 #searchInput { width:100%; padding:10px 14px; border:1px solid #2d4663; border-radius:6px; background:#0f2942; color:#e6edf3; font-size:14px; }
 #searchInput:focus { outline:none; border-color:#667eea; }
 .search-dropdown { position:absolute; top:100%; left:0; right:0; background:#13294b; border:1px solid #2d4663; border-radius:6px; margin-top:4px; max-height:400px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.4); z-index:100; display:none; }
@@ -505,6 +505,56 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .login-error { color:#f56565; font-size:13px; margin-top:10px; text-align:center; }
 .user-info { display:flex; align-items:center; gap:8px; font-size:13px; color:#48bb78; }
 #restoreFileInput { display:none; }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .header { padding:10px 12px; gap:10px; }
+  .header h1 { font-size:18px; }
+  .header-stats { flex-direction:column; gap:8px; font-size:11px; }
+  .stat-value { font-size:16px; }
+  .stat-label { font-size:10px; }
+  #toggleViewBtn { font-size:11px; padding:6px 10px; white-space:nowrap; }
+  .search-wrap { max-width:100%; min-width:150px; }
+  #searchInput { padding:8px 10px; font-size:13px; }
+
+  .toolbar { padding:8px 12px; gap:8px; }
+  .tb-input { width:100%; font-size:12px; padding:6px 8px; }
+  .tb-btn { width:100%; font-size:12px; padding:6px 10px; }
+  .tb-sep { display:none; }
+  .tb-right { width:100%; margin-left:0; }
+  .tb-status { font-size:11px; }
+
+  .sidebar { width:100%; max-width:250px; }
+  .app { flex-direction:column; }
+  .app:not(.horizontal) .sidebar { width:100%; max-width:none; height:150px; border-right:none; border-bottom:1px solid #1d3a5f; }
+  .app:not(.horizontal) .main { padding:16px; }
+
+  .node-header { padding:16px; }
+  .node-title { font-size:22px; }
+  .badges { flex-wrap:wrap; }
+  .node-actions { flex-direction:column; align-items:stretch; }
+  .node-actions .btn-delete { margin-left:0; }
+
+  .children-grid { grid-template-columns:1fr; }
+
+  .login-box { width:90%; max-width:350px; padding:20px; }
+
+  /* Horizontal view mobile adjustments */
+  .line-node { width:140px; font-size:11px; padding:5px 8px; }
+  .line-node .ln-name { font-size:11px; }
+  .line-node .ln-meta { font-size:10px; }
+}
+
+@media (max-width: 480px) {
+  .header h1 { font-size:16px; }
+  .header-stats { display:none; }
+  #toggleViewBtn { font-size:10px; padding:5px 8px; }
+
+  .node-title { font-size:20px; }
+  .badge { font-size:10px; padding:3px 8px; }
+
+  .line-node { width:120px; font-size:10px; }
+}
 </style>
 </head>
 <body>

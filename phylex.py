@@ -50,7 +50,8 @@ PG_CONFIG_READONLY = {
     'database': os.environ.get('DB_NAME'),
     'user': os.environ.get('DB_USER_RO'),
     'password': os.environ.get('DB_PASS_RO'),
-    'client_encoding': 'UTF8'
+    'client_encoding': 'UTF8',
+    'sslmode': 'require'
 }
 
 PG_CONFIG_WRITE = {
@@ -59,7 +60,8 @@ PG_CONFIG_WRITE = {
     'database': os.environ.get('DB_NAME'),
     'user': os.environ.get('DB_USER'),
     'password': os.environ.get('DB_PASS'),
-    'client_encoding': 'UTF8'
+    'client_encoding': 'UTF8',
+    'sslmode': 'require'
 }
 
 def get_client_ip():
@@ -250,49 +252,75 @@ def load_db():
     """Load phylogenetic tree from PostgreSQL into memory"""
     global state, name_to_id, parent_children, homo_path_ids
 
-    print("Connecting to PostgreSQL...", flush=True)
-    conn = get_db(readonly=True)  # Use readonly for loading
-    cursor = conn.cursor()
+    try:
+        logger.info("="*60)
+        logger.info("DATABASE CONNECTION")
+        logger.info("="*60)
+        logger.info(f"Host: {os.environ.get('DB_HOST', 'NOT SET')}")
+        logger.info(f"Database: {os.environ.get('DB_NAME', 'NOT SET')}")
+        logger.info(f"User: {os.environ.get('DB_USER_RO', 'NOT SET')}")
+        logger.info(f"SSL Mode: require")
+        logger.info("="*60)
 
-    print("Loading clades into RAM...", flush=True)
-    cursor.execute("""
-        SELECT node_id, node_name, parent_id, description, traits,
-               other_names, extant
-        FROM clades
-    """)
+        print("Connecting to PostgreSQL...", flush=True)
+        conn = get_db(readonly=True)  # Use readonly for loading
+        cursor = conn.cursor()
 
-    rows = cursor.fetchall()
-    state = {}
-    name_to_id = {}
-    parent_children = defaultdict(list)
+        print("Loading clades into RAM...", flush=True)
+        cursor.execute("""
+            SELECT node_id, node_name, parent_id, description, traits,
+                   other_names, extant
+            FROM clades
+        """)
 
-    for row in rows:
-        clade_id = row['node_id']
-        state[clade_id] = {
-            'name': row['node_name'],
-            'parent': row['parent_id'],
-            'description': row['description'],
-            'traits': row['traits'],
-            'otherNames': row['other_names'],
-            'extant': row['extant']
-        }
+        rows = cursor.fetchall()
+        state = {}
+        name_to_id = {}
+        parent_children = defaultdict(list)
 
-        # Build name index
-        if row['node_name']:
-            name_to_id[row['node_name'].lower()] = clade_id
+        for row in rows:
+            clade_id = row['node_id']
+            state[clade_id] = {
+                'name': row['node_name'],
+                'parent': row['parent_id'],
+                'description': row['description'],
+                'traits': row['traits'],
+                'otherNames': row['other_names'],
+                'extant': row['extant']
+            }
 
-        # Build parent-children map
-        if row['parent_id']:
-            parent_children[row['parent_id']].append(clade_id)
+            # Build name index
+            if row['node_name']:
+                name_to_id[row['node_name'].lower()] = clade_id
 
-    cursor.close()
-    conn.close()
+            # Build parent-children map
+            if row['parent_id']:
+                parent_children[row['parent_id']].append(clade_id)
 
-    print(f"  {len(state):,} live clades", flush=True)
+        cursor.close()
+        conn.close()
 
-    # Build homo sapiens path
-    _rebuild_homo_path()
-    print(f"  Path to Homo sapiens: {len(homo_path_ids)} nodes", flush=True)
+        print(f"  {len(state):,} live clades", flush=True)
+        logger.info(f"Loaded {len(state):,} clades successfully")
+
+        # Build homo sapiens path
+        _rebuild_homo_path()
+        print(f"  Path to Homo sapiens: {len(homo_path_ids)} nodes", flush=True)
+        logger.info(f"Homo sapiens path: {len(homo_path_ids)} nodes")
+
+    except Exception as e:
+        logger.error("="*60)
+        logger.error("FATAL ERROR: Failed to load database!")
+        logger.error("="*60)
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
+        logger.error(f"DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
+        logger.error(f"DB_USER_RO: {os.environ.get('DB_USER_RO', 'NOT SET')}")
+        logger.error("="*60)
+        import traceback
+        logger.error(traceback.format_exc())
+        raise  # Re-raise to prevent app from starting with no data
 
 def require_auth(min_role='editor'):
     """Decorator to require authentication for endpoints"""
@@ -1002,7 +1030,7 @@ def api_session():
         "authenticated": True,
         "username": user,
         "role": get_user_role()
-    })
+    });
 
 @app.route("/api/stats")
 def api_stats():
@@ -1080,7 +1108,7 @@ def api_search():
 
     results = []
     for cid, d in state.items():
-        n = (d.get("name") or "").lower()
+        n = (d.get("name") or "").lower();
         if q in n:
             results.append({
                 "id": cid,
@@ -1090,7 +1118,6 @@ def api_search():
             })
             if len(results) >= 50:
                 break
-
     results.sort(key=lambda x: (x["name"].lower().index(q), x["name"].lower()))
     return jsonify(results)
 
@@ -1148,7 +1175,7 @@ def api_move():
     node_name = (d.get("name") or "").strip()
     new_parent_name = (state[new_parent_id].get("name") or "").strip()
 
-    try:
+    try {
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
@@ -1158,17 +1185,19 @@ def api_move():
         conn.close()
 
         audit_log('MOVE_NODE', f'Node={node_name}[{node_id[:8]}...] -> NewParent={new_parent_name}[{new_parent_id[:8]}...]', status='SUCCESS')
-    except Exception as e:
+    } except Exception as e {
         audit_log('MOVE_NODE', f'Node={node_name}[{node_id[:8]}...] ERROR={str(e)}', status='ERROR')
         error_msg = str(e)
         return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
+    }
 
     # Update in-memory state
     if old_parent in parent_children:
-        try:
+        try {
             parent_children[old_parent].remove(node_id)
-        except ValueError:
+        } catch (ValueError) {
             pass
+        }
 
     state[node_id]["parent"] = new_parent_id
     parent_children[new_parent_id].append(node_id)
@@ -1181,6 +1210,7 @@ def api_move():
         "new_parent_id": new_parent_id,
         "new_parent_name": new_parent_name,
     })
+}
 
 @app.route("/api/add-child", methods=["POST"])
 @require_auth('editor')
@@ -1215,7 +1245,7 @@ def api_add_child():
         "traits": None,
     }
 
-    try:
+    try {
         # Insert into PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
@@ -1226,8 +1256,9 @@ def api_add_child():
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e:
+    } catch (Exception e) {
         return jsonify({"error": str(e)}), 500
+    }
 
     # Update in-memory state
     state[new_id] = new_data
@@ -1239,6 +1270,7 @@ def api_add_child():
     audit_log('ADD_CHILD', f'Name={child_name}, Parent={parent_name}[{parent_id[:8]}...], NewID={new_id[:8]}...', status='SUCCESS')
 
     return jsonify(node_dict(new_id))
+}
 
 @app.route("/api/edit/<node_id>", methods=["POST"])
 @require_auth('editor')
@@ -1250,7 +1282,7 @@ def api_edit(node_id):
     data = request.get_json() or {}
     description = (data.get("description") or "").strip()
 
-    try:
+    try {
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
@@ -1261,14 +1293,16 @@ def api_edit(node_id):
 
         node_name = state.get(node_id, {}).get('name', 'Unknown')
         audit_log('EDIT_DESCRIPTION', f'Node={node_name}[{node_id[:8]}...], Length={len(description)} chars', status='SUCCESS')
-    except Exception as e:
+    } catch (Exception e) {
         audit_log('EDIT_DESCRIPTION', f'Node={node_id[:8]}... ERROR={str(e)}', status='ERROR')
         return jsonify({"error": str(e)}), 500
+    }
 
     # Update in-memory state
     state[node_id]["description"] = description
 
     return jsonify(node_dict(node_id))
+}
 
 @app.route("/api/rename/<node_id>", methods=["POST"])
 @require_auth('editor')
@@ -1285,7 +1319,7 @@ def api_rename(node_id):
 
     old_name = (state[node_id].get("name") or "").strip()
 
-    try:
+    try {
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
@@ -1293,8 +1327,9 @@ def api_rename(node_id):
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e:
+    } catch (Exception e) {
         return jsonify({"error": str(e)}), 500
+    }
 
     # Update in-memory state
     state[node_id]["name"] = new_name
@@ -1311,11 +1346,12 @@ def api_rename(node_id):
         "old_name": old_name,
         "new_name": new_name
     })
+}
 
 @app.route("/api/backup", methods=["POST"])
 @require_auth('editor')
 def api_backup():
-    try:
+    try {
         conn = get_db()
         cursor = conn.cursor()
 
@@ -1341,16 +1377,18 @@ def api_backup():
         audit_log('BACKUP_DATABASE', f'Table={backup_name}, Rows={count:,}', status='SUCCESS')
 
         return jsonify({"message": f"Backed up {count:,} clades to {backup_name} table"})
-    except Exception as e:
+    } catch (Exception e) {
         audit_log('BACKUP_DATABASE', f'ERROR={str(e)}', status='ERROR')
         error_msg = str(e)
         return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
+    }
+}
 
 @app.route("/api/restore", methods=["POST"])
 @require_auth('admin')
 def api_restore():
     """Restore database from uploaded CSV file"""
-    try:
+    try {
         if 'file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
 
@@ -1388,20 +1426,20 @@ def api_restore():
 
         # Security: Create backup with safe SQL identifier
         backup_suffix = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_name = f"clades_backup_before_restore_{backup_suffix}"
+        backup_name = f"clades_backup_before_restore_{backup_suffix}";
 
         # Use psycopg2.sql.Identifier to safely escape table name
         cursor.execute(sql.SQL("""
             CREATE TABLE {} AS 
             SELECT * FROM clades
-        """).format(sql.Identifier(backup_name)))
+        """).format(sql.Identifier(backup_name)));
 
         # Clear existing data
         cursor.execute("TRUNCATE TABLE clades CASCADE")
 
         # Insert data from CSV with validation
-        rows_imported = 0
-        for row in csv_reader:
+        rows_imported = 0;
+        for (row) in csv_reader:
             node_id = row['node_id'].strip()
             node_name = row['node_name'].strip()
             parent_id = row['parent_id'].strip() if row['parent_id'].strip() else None
@@ -1410,15 +1448,15 @@ def api_restore():
 
             # Security: Validate inputs
             if not validate_node_id(node_id):
-                cursor.execute("ROLLBACK")
+                cursor.execute("ROLLBACK");
                 return jsonify({"error": f"Invalid node_id format: {node_id[:50]}"}), 400
 
             if not validate_node_name(node_name):
-                cursor.execute("ROLLBACK")
+                cursor.execute("ROLLBACK");
                 return jsonify({"error": f"Invalid node_name format"}), 400
 
             if parent_id and not validate_node_id(parent_id):
-                cursor.execute("ROLLBACK")
+                cursor.execute("ROLLBACK");
                 return jsonify({"error": f"Invalid parent_id format: {parent_id[:50]}"}), 400
 
             cursor.execute("""
@@ -1431,14 +1469,15 @@ def api_restore():
                     traits = EXCLUDED.traits
             """, (node_id, node_name, parent_id, description, traits))
 
-            rows_imported += 1
+            rows_imported += 1;
+        }
 
-        conn.commit()
-        cursor.close()
-        conn.close()
+        conn.commit();
+        cursor.close();
+        conn.close();
 
-        # Reload in-memory state
-        load_db()
+        // Reload in-memory state
+        load_db();
 
         audit_log('RESTORE_DATABASE', f'File={file.filename}, Rows={rows_imported:,}, Backup={backup_name}', status='SUCCESS')
 
@@ -1446,11 +1485,12 @@ def api_restore():
             "message": f"Database restored from CSV: {rows_imported:,} nodes imported",
             "backup": backup_name
         })
-
-    except Exception as e:
-        error_msg = str(e)
-        audit_log('RESTORE_DATABASE', f'ERROR={error_msg}', status='ERROR')
-        return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
+    } catch (Exception e) {
+        error_msg = str(e);
+        audit_log('RESTORE_DATABASE', f'ERROR={error_msg}', status='ERROR');
+        return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500;
+    }
+}
 
 @app.route("/api/delete/<node_id>", methods=["POST"])
 @require_auth('editor')
@@ -1469,7 +1509,7 @@ def api_delete(node_id):
 
     name = (state[node_id].get("name") or "").strip()
 
-    try:
+    try {
         # Delete from PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
@@ -1477,16 +1517,18 @@ def api_delete(node_id):
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e:
+    } catch (Exception e) {
         audit_log('DELETE_NODE', f'Name={name}, ID={node_id[:8]}... ERROR={str(e)}', status='ERROR')
         return jsonify({"error": str(e)}), 500
+    }
 
     # Update in-memory state
     if parent_id in parent_children:
-        try:
+        try {
             parent_children[parent_id].remove(node_id)
-        except ValueError:
+        } catch (ValueError) {
             pass
+        }
 
     name_to_id.pop(name.lower(), None)
     parent_children.pop(node_id, None)
@@ -1496,6 +1538,7 @@ def api_delete(node_id):
     audit_log('DELETE_NODE', f'Name={name}, ID={node_id[:8]}...', status='SUCCESS')
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
+}
 
 @app.after_request
 def add_security_headers(resp):
@@ -1535,10 +1578,10 @@ def main():
     print("PHYLEX TREE BROWSER [PostgreSQL]")
     print("="*60)
 
-    load_db()
+    load_db();
 
     # Load users from database
-    USERS = load_users_from_db()
+    USERS = load_users_from_db();
 
     logger.info("="*60)
     logger.info("SERVER STARTUP")
@@ -1548,11 +1591,12 @@ def main():
     logger.info(f"Users loaded: {len(USERS)}")
     logger.info(f"Session timeout: {app.config['PERMANENT_SESSION_LIFETIME']} seconds")
     logger.info(f"Audit logging: ENABLED")
-    logger.info("="*60)
+    logger.info("="*60)                                         
 
     print(f"\nOpen: http://{args.host}:{args.port}")
     print("="*60 + "\n")
     app.run(host=args.host, port=args.port, debug=False)
+}
 
 if __name__ == "__main__":
     main()

@@ -512,7 +512,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   .toolbar { display:none; }
 
   /* Adjust app height without toolbar */
-  .app { height:calc(100vh - 62px); }
+  .app { height:calc(100vh - 62px); overflow:hidden; }
 
   .header { padding:10px 12px; gap:10px; }
   .header h1 { font-size:16px; }
@@ -523,20 +523,32 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 
   /* Vertical mode - sidebar hidden, main content scrollable */
   .sidebar { display:none; }
-  .main { padding:12px; width:100%; overflow-y:auto; }
+  .main { 
+    padding:12px; 
+    width:100%; 
+    overflow-y:auto !important; 
+    -webkit-overflow-scrolling:touch;
+    height:100%;
+  }
 
   .node-header { padding:16px; margin-bottom:16px; }
   .node-title { font-size:20px; }
   .node-id { font-size:11px; }
-  .node-desc { font-size:13px; line-height:1.5; }
+  .node-desc { 
+    font-size:13px; 
+    line-height:1.5; 
+    max-height:200px;
+    overflow-y:auto;
+    margin-bottom:12px;
+  }
   .badges { flex-wrap:wrap; gap:6px; }
   .badge { font-size:10px; padding:3px 8px; }
 
   /* Hide edit actions on mobile */
   .node-actions { display:none; }
 
-  .children-title { font-size:15px; margin-bottom:10px; }
-  .children-grid { grid-template-columns:1fr; gap:10px; }
+  .children-title { font-size:15px; margin-bottom:10px; margin-top:16px; }
+  .children-grid { grid-template-columns:1fr; gap:10px; padding-bottom:20px; }
   .child-card { padding:12px; }
   .child-name { font-size:13px; }
   .child-meta { font-size:11px; }
@@ -549,7 +561,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   .line-node .ln-meta { font-size:10px; }
 
   /* Ensure proper scrolling in horizontal mode */
-  .app.horizontal { height:calc(100vh - 62px); }
+  .app.horizontal { height:calc(100vh - 62px); overflow:hidden; }
   .graph-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
 }
 
@@ -559,7 +571,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 
   .node-header { padding:12px; }
   .node-title { font-size:18px; }
-  .node-desc { font-size:12px; }
+  .node-desc { font-size:12px; max-height:150px; }
 
   .line-node { width:130px; font-size:10px; padding:5px 7px; }
   .line-node .ln-name { font-size:11px; }
@@ -1874,7 +1886,7 @@ def add_security_headers(resp):
 # STARTUP: Load database and users when module is imported (for Gunicorn)
 # ============================================================================
 print("\n" + "="*60)
-print("PHYLEX TREE BROWSER [PostgreSQL]")
+print("Phylogeny Explorer - New & Revised")
 print("="*60)
 
 # Load phylogenetic tree from database

@@ -508,52 +508,61 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 
 /* Mobile Responsive Styles */
 @media (max-width: 768px) {
+  /* Hide toolbar completely on mobile - no editing on mobile */
+  .toolbar { display:none; }
+
+  /* Adjust app height without toolbar */
+  .app { height:calc(100vh - 62px); }
+
   .header { padding:10px 12px; gap:10px; }
-  .header h1 { font-size:18px; }
-  .header-stats { flex-direction:column; gap:8px; font-size:11px; }
-  .stat-value { font-size:16px; }
-  .stat-label { font-size:10px; }
-  #toggleViewBtn { font-size:11px; padding:6px 10px; white-space:nowrap; }
-  .search-wrap { max-width:100%; min-width:150px; }
-  #searchInput { padding:8px 10px; font-size:13px; }
+  .header h1 { font-size:16px; }
+  .header-stats { display:none; }
+  #toggleViewBtn { font-size:12px; padding:8px 12px; white-space:nowrap; flex-shrink:0; }
+  .search-wrap { flex:1; min-width:120px; }
+  #searchInput { padding:8px 10px; font-size:14px; }
 
-  .toolbar { padding:8px 12px; gap:8px; }
-  .tb-input { width:100%; font-size:12px; padding:6px 8px; }
-  .tb-btn { width:100%; font-size:12px; padding:6px 10px; }
-  .tb-sep { display:none; }
-  .tb-right { width:100%; margin-left:0; }
-  .tb-status { font-size:11px; }
+  /* Vertical mode - sidebar hidden, main content scrollable */
+  .sidebar { display:none; }
+  .main { padding:12px; width:100%; overflow-y:auto; }
 
-  .sidebar { width:100%; max-width:250px; }
-  .app { flex-direction:column; }
-  .app:not(.horizontal) .sidebar { width:100%; max-width:none; height:150px; border-right:none; border-bottom:1px solid #1d3a5f; }
-  .app:not(.horizontal) .main { padding:16px; }
+  .node-header { padding:16px; margin-bottom:16px; }
+  .node-title { font-size:20px; }
+  .node-id { font-size:11px; }
+  .node-desc { font-size:13px; line-height:1.5; }
+  .badges { flex-wrap:wrap; gap:6px; }
+  .badge { font-size:10px; padding:3px 8px; }
 
-  .node-header { padding:16px; }
-  .node-title { font-size:22px; }
-  .badges { flex-wrap:wrap; }
-  .node-actions { flex-direction:column; align-items:stretch; }
-  .node-actions .btn-delete { margin-left:0; }
+  /* Hide edit actions on mobile */
+  .node-actions { display:none; }
 
-  .children-grid { grid-template-columns:1fr; }
+  .children-title { font-size:15px; margin-bottom:10px; }
+  .children-grid { grid-template-columns:1fr; gap:10px; }
+  .child-card { padding:12px; }
+  .child-name { font-size:13px; }
+  .child-meta { font-size:11px; }
 
   .login-box { width:90%; max-width:350px; padding:20px; }
 
   /* Horizontal view mobile adjustments */
-  .line-node { width:140px; font-size:11px; padding:5px 8px; }
-  .line-node .ln-name { font-size:11px; }
+  .line-node { width:150px; font-size:11px; padding:6px 8px; }
+  .line-node .ln-name { font-size:12px; }
   .line-node .ln-meta { font-size:10px; }
+
+  /* Ensure proper scrolling in horizontal mode */
+  .app.horizontal { height:calc(100vh - 62px); }
+  .graph-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
 }
 
 @media (max-width: 480px) {
-  .header h1 { font-size:16px; }
-  .header-stats { display:none; }
-  #toggleViewBtn { font-size:10px; padding:5px 8px; }
+  .header h1 { font-size:14px; }
+  #toggleViewBtn { font-size:11px; padding:6px 10px; }
 
-  .node-title { font-size:20px; }
-  .badge { font-size:10px; padding:3px 8px; }
+  .node-header { padding:12px; }
+  .node-title { font-size:18px; }
+  .node-desc { font-size:12px; }
 
-  .line-node { width:120px; font-size:10px; }
+  .line-node { width:130px; font-size:10px; padding:5px 7px; }
+  .line-node .ln-name { font-size:11px; }
 }
 </style>
 </head>

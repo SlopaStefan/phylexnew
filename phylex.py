@@ -110,28 +110,12 @@ def audit_log(action, details=None, user=None, status='SUCCESS'):
     else:
         logger.info(log_message)
 
-# Use bcrypt if available, otherwise fallback to SHA-256
-try:
-    import bcrypt
-    USE_BCRYPT = True
-    logger.info("Using bcrypt for password hashing")
-except ImportError:
-    USE_BCRYPT = False
-    logger.warning("bcrypt not installed - using SHA-256 (install bcrypt for production: pip install bcrypt)")
+# Plaintext password verification (passwords stored in clear text in database)
+logger.info("Using plaintext password verification")
 
-def hash_password(password):
-    """Hash password using bcrypt or SHA-256"""
-    if USE_BCRYPT:
-        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    else:
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
-def verify_password(password, hash_value):
-    """Verify password against hash"""
-    if USE_BCRYPT and hash_value.startswith('$2b$'):
-        return bcrypt.checkpw(password.encode('utf-8'), hash_value.encode('utf-8'))
-    else:
-        return hashlib.sha256(password.encode('utf-8')).hexdigest() == hash_value
+def verify_password(password, stored_password):
+    """Verify password against plaintext stored password"""
+    return password == stored_password
 
 def load_users_from_db():
     """
@@ -161,7 +145,7 @@ def load_users_from_db():
 
         # Load active users
         cursor.execute("""
-            SELECT username, password_hash, role
+            SELECT username, password, role
             FROM users
             WHERE is_active = TRUE
         """)
@@ -169,7 +153,7 @@ def load_users_from_db():
         users = {}
         for row in cursor.fetchall():
             users[row['username']] = {
-                'password_hash': row['password_hash'],
+                'password': row['password'],
                 'role': row['role']
             }
 
@@ -624,7 +608,7 @@ function renderMain(node, children) {
            &#128220; Node Traits
          </div>
          <div class="node-desc" style="background:#0f3460;padding:12px;border-radius:6px;border-left:3px solid #667eea">
-           ${esc(node.traits).replace(/\\n\\n/g, '<br><br>')}
+           ${esc(node.traits).replace(/\n\n/g, '<br><br>')}
          </div>
        </div>` 
     : '';
@@ -831,7 +815,7 @@ function backupDB() {
 }
 
 function triggerRestore() {
-  if (!confirm('Restore database from CSV?\\n\\nThis will:\\n1. Create a backup of current database\\n2. Replace all data with CSV content\\n\\nContinue?')) return;
+  if (!confirm('Restore database from CSV?\n\nThis will:\n1. Create a backup of current database\n2. Replace all data with CSV content\n\nContinue?')) return;
   document.getElementById('restoreFileInput').click();
 }
 
@@ -977,8 +961,8 @@ def api_login():
 
     user_info = USERS.get(username)
 
-    if not user_info or not verify_password(password, user_info['password_hash']):
-        # Security: Constant-time comparison via bcrypt or timing-safe compare
+    if not user_info or not verify_password(password, user_info['password']):
+        # Plaintext password comparison
         audit_log('LOGIN_ATTEMPT', f'Invalid credentials for user={username}', user=username, status='FAILED')
         return jsonify({"error": "Invalid credentials"}), 401
 

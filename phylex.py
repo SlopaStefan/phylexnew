@@ -132,10 +132,11 @@ def load_users_from_db():
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_name = 'users'
-            )
+            ) as exists
         """)
 
-        if not cursor.fetchone()[0]:
+        result = cursor.fetchone()
+        if not result['exists']:
             logger.warning("Users table not found - authentication disabled")
             logger.warning("Run: psql -U phylex -d phylex -f setup_users_table.sql")
             logger.warning("Then: python manage_users.py setup")
@@ -164,7 +165,9 @@ def load_users_from_db():
         return users
 
     except Exception as e:
+        import traceback
         logger.error(f"Error loading users from database: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         logger.warning("Authentication disabled - no users loaded")
         return {}
 
@@ -255,7 +258,7 @@ def load_db():
 
     print("Loading clades into RAM...", flush=True)
     cursor.execute("""
-        SELECT id, name, parent_id, description, traits, 
+        SELECT node_id, node_name, parent_id, description, traits,
                other_names, extant
         FROM clades
     """)
@@ -266,9 +269,9 @@ def load_db():
     parent_children = defaultdict(list)
 
     for row in rows:
-        clade_id = row['id']
+        clade_id = row['node_id']
         state[clade_id] = {
-            'name': row['name'],
+            'name': row['node_name'],
             'parent': row['parent_id'],
             'description': row['description'],
             'traits': row['traits'],
@@ -277,8 +280,8 @@ def load_db():
         }
 
         # Build name index
-        if row['name']:
-            name_to_id[row['name'].lower()] = clade_id
+        if row['node_name']:
+            name_to_id[row['node_name'].lower()] = clade_id
 
         # Build parent-children map
         if row['parent_id']:
@@ -608,7 +611,7 @@ function renderMain(node, children) {
            &#128220; Node Traits
          </div>
          <div class="node-desc" style="background:#0f3460;padding:12px;border-radius:6px;border-left:3px solid #667eea">
-           ${esc(node.traits).replace(/\n\n/g, '<br><br>')}
+           ${esc(node.traits).replace(/\\n\\n/g, '<br><br>')}
          </div>
        </div>` 
     : '';
@@ -815,7 +818,7 @@ function backupDB() {
 }
 
 function triggerRestore() {
-  if (!confirm('Restore database from CSV?\n\nThis will:\n1. Create a backup of current database\n2. Replace all data with CSV content\n\nContinue?')) return;
+  if (!confirm('Restore database from CSV?\\n\\nThis will:\\n1. Create a backup of current database\\n2. Replace all data with CSV content\\n\\nContinue?')) return;
   document.getElementById('restoreFileInput').click();
 }
 
@@ -1151,7 +1154,7 @@ def api_move():
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("UPDATE clades SET parent_id = %s WHERE id = %s", (new_parent_id, node_id))
+        cursor.execute("UPDATE clades SET parent_id = %s WHERE node_id = %s", (new_parent_id, node_id))
         conn.commit()
         cursor.close()
         conn.close()
@@ -1159,7 +1162,8 @@ def api_move():
         audit_log('MOVE_NODE', f'Node={node_name}[{node_id[:8]}...] -> NewParent={new_parent_name}[{new_parent_id[:8]}...]', status='SUCCESS')
     except Exception as e:
         audit_log('MOVE_NODE', f'Node={node_name}[{node_id[:8]}...] ERROR={str(e)}', status='ERROR')
-        return jsonify({"error": sanitize_error(str(e))}), 500
+        error_msg = str(e)
+        return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
 
     # Update in-memory state
     if old_parent in parent_children:
@@ -1218,7 +1222,7 @@ def api_add_child():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO clades (id, name, parent_id, description, traits, other_names, extant)
+            INSERT INTO clades (node_id, node_name, parent_id, description, traits, other_names, extant)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (new_id, child_name, parent_id, description, None, None, None))
         conn.commit()
@@ -1252,7 +1256,7 @@ def api_edit(node_id):
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("UPDATE clades SET description = %s WHERE id = %s", (description, node_id))
+        cursor.execute("UPDATE clades SET description = %s WHERE node_id = %s", (description, node_id))
         conn.commit()
         cursor.close()
         conn.close()
@@ -1287,7 +1291,7 @@ def api_rename(node_id):
         # Update in PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("UPDATE clades SET name = %s WHERE id = %s", (new_name, node_id))
+        cursor.execute("UPDATE clades SET node_name = %s WHERE node_id = %s", (new_name, node_id))
         conn.commit()
         cursor.close()
         conn.close()
@@ -1341,7 +1345,8 @@ def api_backup():
         return jsonify({"message": f"Backed up {count:,} clades to {backup_name} table"})
     except Exception as e:
         audit_log('BACKUP_DATABASE', f'ERROR={str(e)}', status='ERROR')
-        return jsonify({"error": sanitize_error(str(e))}), 500
+        error_msg = str(e)
+        return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
 
 @app.route("/api/restore", methods=["POST"])
 @require_auth('admin')
@@ -1376,7 +1381,7 @@ def api_restore():
         csv_reader = csv.DictReader(io.StringIO(content))
 
         # Validate CSV headers
-        required_headers = {'node_id', 'node_name', 'parent_id', 'description'}
+        required_headers = {'node_id', 'node_name', 'parent_id'}
         if not required_headers.issubset(set(csv_reader.fieldnames or [])):
             return jsonify({"error": f"CSV must contain headers: {', '.join(required_headers)}"}), 400
 
@@ -1419,14 +1424,14 @@ def api_restore():
                 return jsonify({"error": f"Invalid parent_id format: {parent_id[:50]}"}), 400
 
             cursor.execute("""
-                INSERT INTO clades (id, name, parent_id, description, traits, other_names, extant, wikipedia_checked)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name,
+                INSERT INTO clades (node_id, node_name, parent_id, description, traits)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (node_id) DO UPDATE SET
+                    node_name = EXCLUDED.node_name,
                     parent_id = EXCLUDED.parent_id,
                     description = EXCLUDED.description,
                     traits = EXCLUDED.traits
-            """, (node_id, node_name, parent_id, description, traits, None, None, False))
+            """, (node_id, node_name, parent_id, description, traits))
 
             rows_imported += 1
 
@@ -1445,8 +1450,9 @@ def api_restore():
         })
 
     except Exception as e:
-        audit_log('RESTORE_DATABASE', f'ERROR={str(e)}', status='ERROR')
-        return jsonify({"error": sanitize_error(str(e))}), 500
+        error_msg = str(e)
+        audit_log('RESTORE_DATABASE', f'ERROR={error_msg}', status='ERROR')
+        return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
 
 @app.route("/api/delete/<node_id>", methods=["POST"])
 @require_auth('editor')
@@ -1469,7 +1475,7 @@ def api_delete(node_id):
         # Delete from PostgreSQL
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM clades WHERE id = %s", (node_id,))
+        cursor.execute("DELETE FROM clades WHERE node_id = %s", (node_id,))
         conn.commit()
         cursor.close()
         conn.close()

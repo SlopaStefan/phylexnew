@@ -3,9 +3,6 @@
 Flask==3.0.0
 Werkzeug==3.0.1
 
-# Rate limiting
-Flask-Limiter==3.5.0
-
 # Database
 psycopg2-binary==2.9.9
 

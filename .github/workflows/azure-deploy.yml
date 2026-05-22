@@ -1,39 +1,23 @@
-name: Deploy Phylex to Azure App Service
+name: Deploy to Azure Web App
 
 on:
   push:
     branches:
       - main
-      - master
-  workflow_dispatch:
-
-env:
-  AZURE_WEBAPP_NAME: phylex-app    # Change this to your app name
-  PYTHON_VERSION: '3.11'
-
-permissions:
-  contents: read
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+    # 1. Check out the repository
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@v4
 
-      - name: Set up Python version
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+    # 2. Add your specific build steps here (e.g., Setup Node/Python/Dotnet, build commands)
 
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-
-      - name: Health Check
-        run: |
-          sleep 30
-          curl -f https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/health || echo "Health check failed"
+    # 3. Deploy directly via Publish Profile
+    - name: 'Deploy to Azure Web App'
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: 'phylexnew' # Replace with your exact app name
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}

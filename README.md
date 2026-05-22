@@ -1,10 +1,12 @@
 # Phylex - Interactive Phylogenetic Tree Browser
 
 Explore the tree of life with an intuitive, user-friendly interface. Browse 27,000+ organisms from the origin of life to modern species.
+Feel free to download the data as csv and expand it or build new navigations/apps based on it.
 
 **Live Demo:** https://phylexnew-bueacfd8ctbchbc3.francecentral-01.azurewebsites.net/
 
-Feel free to download the data as csv and expand it or build new navigations/apps based on it.
+This data is based on AronRA's Phylogeny Explorer seen in 'Systematic Classification of Life' youtube series.
+A shoutout to ToLWeb.org, Wikipedia's phylogenies & Wikispecies, OneZoom tree of life, OTT (OpenTreeofLife), iToL
 ---
 
 ## What You Can Do

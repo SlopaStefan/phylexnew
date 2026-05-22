@@ -418,7 +418,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .sd-item:hover { background:#1d3a5f; }
 .sd-item.on-path { border-left:3px solid #667eea; }
 .sd-meta { font-size:12px; color:#8b949e; margin-top:4px; }
-.toolbar { background:#0f2942; border-bottom:1px solid #1d3a5f; padding:10px 20px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.toolbar { background:#0f2942; border-bottom:1px solid #1d3a5f; padding:10px 20px; display:none; align-items:center; gap:10px; flex-wrap:wrap; }
 .toolbar.authenticated { display:flex; }
 .tb-input { padding:8px 10px; border:1px solid #2d4663; border-radius:4px; background:#13294b; color:#e6edf3; font-size:13px; width:180px; }
 .tb-btn { padding:8px 14px; border:none; border-radius:4px; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.2s; }
@@ -486,7 +486,8 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .leaf-msg { padding:40px; text-align:center; color:#8b949e; font-size:14px; }
 .error-msg { padding:40px; text-align:center; color:#f56565; font-size:14px; }
 .node-id { font-family:monospace; font-size:12px; color:#667eea; margin:3px 0 10px; }
-.node-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+.node-actions { display:none; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+.node-actions.authenticated { display:flex; }
 .node-actions .btn-delete { margin-left:auto; }
 #restoreFileInput { display:none; }
 .btn-admin { background:#9f7aea; color:white; }
@@ -587,7 +588,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
       <div class="search-dropdown" id="searchDropdown"></div>
     </div>
     <button class="tb-btn btn-export" onclick="exportCSV()" style="background:#4299e1;color:white;margin-left:auto;">&#8595;&nbsp;Export CSV</button>
-    <div class="header-stats" style="margin-left:10px;">
+    <div class="header-stats" style="margin-left:10px; display:flex; gap:16px;">
       <div class="stat-item">
         <div class="stat-value" id="statTotal">-</div>
         <div class="stat-label">Total Nodes</div>
@@ -998,6 +999,7 @@ function updateAuthUI(session) {
   const userInfo = document.getElementById('userInfo');
   const username = document.getElementById('username');
   const toolbar = document.querySelector('.toolbar');
+  const nodeActions = document.querySelectorAll('.node-actions');
 
   if (session.authenticated) {
     btnAdmin.style.display = 'none';
@@ -1005,10 +1007,12 @@ function updateAuthUI(session) {
     const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
     username.textContent = session.username + roleLabel;
     if (toolbar) toolbar.classList.add('authenticated');
+    nodeActions.forEach(el => el.classList.add('authenticated'));
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
     if (toolbar) toolbar.classList.remove('authenticated');
+    nodeActions.forEach(el => el.classList.remove('authenticated'));
   }
 }
 

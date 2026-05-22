@@ -1562,8 +1562,26 @@ def api_delete(node_id):
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
 
+@app.before_request
+def before_request():
+    """Track request start time"""
+    import time
+    request.start_time = time.time()
+
 @app.after_request
 def add_security_headers(resp):
+    """Add security headers and log request timing"""
+    import time
+
+    # Calculate request duration
+    if hasattr(request, 'start_time'):
+        duration = time.time() - request.start_time
+        duration_ms = duration * 1000
+
+        # Log request with timing
+        user = get_current_user() or 'anonymous'
+        logger.info(f"REQUEST: {request.method} {request.path} | User: {user} | Status: {resp.status_code} | Duration: {duration_ms:.2f}ms")
+
     # Cache control
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'

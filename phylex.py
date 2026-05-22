@@ -1581,6 +1581,29 @@ def add_security_headers(resp):
 
     return resp
 
+# ============================================================================
+# STARTUP: Load database and users when module is imported (for Gunicorn)
+# ============================================================================
+print("\n" + "="*60)
+print("Phylogeny Explorer - revised data")
+print("="*60)
+
+# Load phylogenetic tree from database
+load_db()
+
+# Load users from database
+USERS = load_users_from_db()
+
+logger.info("="*60)
+logger.info("MODULE LOADED - DATABASE READY")
+logger.info(f"Total nodes loaded: {len(state):,}")
+logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")
+logger.info(f"Users loaded: {len(USERS)}")
+logger.info("="*60)
+
+# ============================================================================
+# Main function for standalone execution
+# ============================================================================
 def main():
     global USERS
 
@@ -1593,13 +1616,11 @@ def main():
     print("Phylogeny Explorer - revised data")
     print("="*60)
 
-    load_db()
-
-    # Load users from database
-    USERS = load_users_from_db()
+    # Database and users already loaded at module import
+    # Just log startup info
 
     logger.info("="*60)
-    logger.info("SERVER STARTUP")
+    logger.info("SERVER STARTUP (standalone mode)")
     logger.info(f"Host: {args.host}:{args.port}")
     logger.info(f"Total nodes loaded: {len(state):,}")
     logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")

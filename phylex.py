@@ -15,6 +15,8 @@ import re
 import logging
 from datetime import datetime
 from flask import Flask, jsonify, request, Response, session
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2 import sql
@@ -39,6 +41,17 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=3600  # 1 hour timeout
 )
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_client_ip,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
+
+logger.info("Rate limiter initialized with IP-based tracking")
 
 # -- Database configuration --
 # SECURITY: All credentials and connection details must be set via environment variables
@@ -519,6 +532,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   .header h1 { font-size:16px; }
   .header-stats { display:none; }
   #toggleViewBtn { font-size:12px; padding:8px 12px; white-space:nowrap; flex-shrink:0; }
+  .btn-export { font-size:12px; padding:8px 12px; white-space:nowrap; flex-shrink:0; }
   .search-wrap { flex:1; min-width:120px; }
   #searchInput { padding:8px 10px; font-size:14px; }
 
@@ -581,12 +595,13 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 </head>
 <body>
 <div class="header">
-  <h1>&#127807; Phylex [PostgreSQL]</h1>
+  <h1>&#127807; Phylogeny explorer - Revised data</h1>
   <div class="search-wrap">
     <input type="text" id="searchInput" placeholder="Search species or taxon...">
     <div class="search-dropdown" id="searchDropdown"></div>
   </div>
   <button class="tb-btn" id="toggleViewBtn" onclick="toggleView()" style="background:#667eea;color:white;margin-left:auto;">Horizontal Lineage</button>
+  <button class="tb-btn btn-export" onclick="exportCSV()" style="background:#4299e1;color:white;">&#8595;&nbsp;Export CSV</button>
   <div class="header-stats" style="margin-left:10px;">
     <div class="stat-item">
       <div class="stat-value" id="statTotal">-</div>
@@ -1273,8 +1288,9 @@ def index():
     return Response(HTML_TEMPLATE, mimetype="text/html")
 
 @app.route("/api/login", methods=["POST"])
+@limiter.limit("5 per minute")
 def api_login():
-    """Login endpoint"""
+    """Login endpoint with rate limiting to prevent brute force attacks"""
     data = request.get_json() or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
@@ -1282,8 +1298,6 @@ def api_login():
     if not username or not password:
         audit_log('LOGIN_ATTEMPT', f'Missing credentials', user=username or 'unknown', status='FAILED')
         return jsonify({"error": "Username and password required"}), 400
-
-    # Security: Rate limiting would go here in production
 
     user_info = USERS.get(username)
 
@@ -1483,7 +1497,9 @@ def api_search():
     return jsonify(results)
 
 @app.route("/api/export")
+@limiter.limit("10 per hour")
 def api_export():
+    """Export phylogenetic tree to CSV with rate limiting to prevent abuse"""
     all_ids = set(state.keys())
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -1885,6 +1901,15 @@ def api_delete(node_id):
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
 
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors with user-friendly messages"""
+    audit_log('RATE_LIMIT_EXCEEDED', f'Endpoint={request.endpoint}', status='DENIED')
+    return jsonify({
+        "error": "Rate limit exceeded. Please try again later.",
+        "message": "Too many requests. Please wait before trying again."
+    }), 429
+
 @app.after_request
 def add_security_headers(resp):
     # Cache control
@@ -1915,7 +1940,7 @@ def add_security_headers(resp):
 # STARTUP: Load database and users when module is imported (for Gunicorn)
 # ============================================================================
 print("\n" + "="*60)
-print("Phylogeny Explorer - revised data")
+print("PHYLEX TREE BROWSER [PostgreSQL]")
 print("="*60)
 
 # Load phylogenetic tree from database

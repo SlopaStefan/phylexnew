@@ -418,7 +418,8 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .sd-item:hover { background:#1d3a5f; }
 .sd-item.on-path { border-left:3px solid #667eea; }
 .sd-meta { font-size:12px; color:#8b949e; margin-top:4px; }
-.toolbar { background:#0f2942; border-bottom:1px solid #1d3a5f; padding:10px 20px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.toolbar { background:#0f2942; border-bottom:1px solid #1d3a5f; padding:10px 20px; display:none; align-items:center; gap:10px; flex-wrap:wrap; }
+.toolbar.authenticated { display:flex; }
 .tb-input { padding:8px 10px; border:1px solid #2d4663; border-radius:4px; background:#13294b; color:#e6edf3; font-size:13px; width:180px; }
 .tb-btn { padding:8px 14px; border:none; border-radius:4px; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.2s; }
 .btn-move { background:#667eea; color:white; }
@@ -591,12 +592,12 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
       <div class="stat-value" id="statTotal">-</div>
       <div class="stat-label">Total Nodes</div>
     </div>
-    <div class="stat-item">
+    <div class="stat-item" style="cursor:pointer;" onclick="navigateToHomoSapiens()" title="Click to view Homo sapiens">
       <div class="stat-value" id="statPath">-</div>
-      <div class="stat-label">Path to Homo</div>
+      <div class="stat-label">Path to <span style="text-decoration:underline;">Homo sapiens</span></div>
     </div>
     <div id="authSection">
-      <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Admin</button>
+      <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Edit Mode</button>
       <div class="user-info" id="userInfo" style="display:none;">
         <span id="username"></span>
         <button class="tb-btn btn-logout" onclick="logout()">Logout</button>
@@ -995,15 +996,20 @@ function updateAuthUI(session) {
   const btnAdmin = document.getElementById('btnAdmin');
   const userInfo = document.getElementById('userInfo');
   const username = document.getElementById('username');
+  const toolbar = document.querySelector('.toolbar');
 
   if (session.authenticated) {
     btnAdmin.style.display = 'none';
     userInfo.style.display = 'flex';
     const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
     username.textContent = session.username + roleLabel;
+    // Show toolbar for authenticated users
+    if (toolbar) toolbar.classList.add('authenticated');
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
+    // Hide toolbar for unauthenticated users
+    if (toolbar) toolbar.classList.remove('authenticated');
   }
 }
 
@@ -1057,6 +1063,8 @@ async function logout() {
     await fetch('/api/logout', {method: 'POST'});
     updateAuthUI({authenticated: false});
     tbStatus('Logged out', true);
+    // Reload page to reset view to read-only mode
+    setTimeout(() => window.location.reload(), 500);
   } catch(e) {
     tbStatus('Logout error: ' + e.message, false);
   }
@@ -1071,6 +1079,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// ?? Navigate to Homo sapiens ????????????????????????????????????????????????????????????
+
+async function navigateToHomoSapiens() {
+  try {
+    // Search for Homo sapiens
+    const results = await get('/api/search?q=homo%20sapiens');
+    if (results && results.length > 0) {
+      // Find exact match
+      const homoSapiens = results.find(r => r.name.toLowerCase() === 'homo sapiens');
+      if (homoSapiens) {
+        navigate(homoSapiens.id);
+      } else {
+        // Use first result if no exact match
+        navigate(results[0].id);
+      }
+    }
+  } catch(e) {
+    console.error('Error navigating to Homo sapiens:', e);
+  }
+}
 
 // ?? View Mode Toggle ????????????????????????????????????????????????????????????
 
@@ -1886,7 +1915,7 @@ def add_security_headers(resp):
 # STARTUP: Load database and users when module is imported (for Gunicorn)
 # ============================================================================
 print("\n" + "="*60)
-print("Phylogeny Explorer - New & Revised")
+print("Phylogeny Explorer - revised data")
 print("="*60)
 
 # Load phylogenetic tree from database

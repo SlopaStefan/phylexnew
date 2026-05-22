@@ -4,6 +4,7 @@ Explore the tree of life with an intuitive, user-friendly interface. Browse 27,0
 
 **Live Demo:** https://phylexnew-bueacfd8ctbchbc3.francecentral-01.azurewebsites.net/
 
+Feel free to download the data as csv and expand it or build new navigations/apps based on it.
 ---
 
 ## What You Can Do
@@ -64,7 +65,7 @@ Each organism card shows:
 - **Traits** - Evolutionary features
 - **Status** - Living or Extinct badge
 - **Children** - Number of sub-classifications
-- **Path Badge** - Purple highlight if on the path to Homo sapiens
+- **Path Badge** - Green highlight if on the path to Homo sapiens
 
 ### Step 5: Quick Actions
 - **Jump to humans:** Click "Homo sapiens" in the top-right header
@@ -81,17 +82,11 @@ Each organism card shows:
 - Use search to jump anywhere instantly
 - Click "Homo sapiens" stat to see human evolution
 
-**Understanding the Display:**
-- Purple highlights = on the path to Homo sapiens
-- Green "Living" badge = organism still exists today
-- Gray "Extinct" badge = organism is extinct
-- Number of children shown on each card
-
 ---
 
 ## Mobile Experience
 
-The app works great on phones and tablets:
+The app works also on phones:
 - Clean, scrollable interface optimized for touch
 - Large buttons easy to tap
 - Search works perfectly
@@ -138,6 +133,7 @@ Current database contains:
 - All major biological kingdoms
 - Descriptions and traits for most organisms
 - Both extinct and living species
+- Very small size: ~4MB with few descriptions, ~9MB with most descriptions
 
 ---
 

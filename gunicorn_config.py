@@ -9,7 +9,7 @@ bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
 backlog = 2048
 
 # Worker processes
-workers = 1
+workers = multiprocessing.cpu_count() * 2 + 1
 worker_class = 'sync'
 worker_connections = 1000
 timeout = 120
@@ -35,9 +35,3 @@ tmp_upload_dir = None
 # SSL (Azure handles this)
 forwarded_allow_ips = '*'
 proxy_allow_ips = '*'
-def on_starting(server):
-    import logging
-    # Force the Azure SDK and underlying connection libraries to only report critical errors
-    logging.getLogger('azure').setLevel(logging.WARNING)
-    logging.getLogger('azure.monitor').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)

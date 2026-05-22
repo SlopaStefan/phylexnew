@@ -1,45 +1,92 @@
-name: Build and Deploy Python App to Azure
+name: Deploy Phylex to Azure App Service
+name: Deploy Phylex to Azure App Service
 
 on:
   push:
     branches:
       - main
+      - master
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: phylex-app    # Change this to your app name
+  PYTHON_VERSION: '3.11'
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python version
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      # Explicitly bundle just the application files, avoiding hidden Git directories
+      - name: Create and start virtual environment
+        run: |
+          python -m venv antenv
+          source antenv/bin/activate
+
+      - name: Install dependencies
+        run: |
+          source antenv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify installation
+        run: |
+          source antenv/bin/activate
+          python -c "import flask; print(f'Flask {flask.__version__}')"
+          python -c "import psycopg2; print(f'psycopg2 {psycopg2.__version__}')"
+          python -c "import bcrypt; print('bcrypt installed')"
+
+      - name: Test import
+        run: |
+          source antenv/bin/activate
+          python -c "import phylex; print('Import successful')"
+
       - name: Zip artifact for deployment
         run: |
-          zip release.zip ./* -r -x "**/*venv/*" -x "**/.git*"
+          zip -r release.zip . -x '*.git*' -x '*__pycache__*' -x '*.pyc'
 
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
+      - name: Upload artifact for deployment jobs
+        uses: actions/upload-artifact@v3
         with:
           name: python-app
           path: release.zip
 
   deploy:
+    permissions:
+      contents: none
     runs-on: ubuntu-latest
     needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
     steps:
       - name: Download artifact from build job
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: python-app
 
+      - name: Unzip artifact for deployment
+        run: unzip release.zip -d .
+
       - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
         with:
-          app-name: 'phylexnew'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: release.zip
+          package: .
+
+      - name: Health Check
+        run: |
+          sleep 30
+          curl -f https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/health || echo "Health check failed"

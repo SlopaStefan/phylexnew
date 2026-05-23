@@ -655,8 +655,17 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 let currentId = null;
 let currentNode = null;
 let currentFocus = null;
+let authState = {authenticated:false, username:null, role:null};
 let searchTimer = null;
 let viewMode = 'vertical'; // 'vertical' or 'horizontal'
+
+function syncNodeActionsAuth() {
+  const nodeActions = document.querySelectorAll('.node-actions');
+  nodeActions.forEach(el => {
+    if (authState.authenticated) el.classList.add('authenticated');
+    else el.classList.remove('authenticated');
+  });
+}
 
 // ?? Boot ?????????????????????????????????????????????????????????????????????
 
@@ -671,7 +680,12 @@ async function boot() {
     ]);
     updateAuthUI(session);
     updateStats(stats);
-    await navigate(root.id);
+    const startId = localStorage.getItem('currentId') || root.id;
+    try {
+      await navigate(startId);
+    } catch (e) {
+      await navigate(root.id);
+    }
   } catch(e) {
     showError('Could not load root node: ' + e.message);
   }
@@ -686,6 +700,7 @@ function updateStats(stats) {
 
 async function navigate(nodeId) {
   currentId = nodeId;
+  if (window.localStorage) localStorage.setItem('currentId', nodeId);
   if (viewMode === 'vertical') {
   showMainLoading();
 
@@ -789,6 +804,7 @@ function renderMain(node, children) {
   }
 
   el.innerHTML = html;
+  syncNodeActionsAuth();
 }
 
 // ?? Search ???????????????????????????????????????????????????????????????????
@@ -998,25 +1014,30 @@ async function handleRestoreFile(event) {
 // ?? Authentication ????????????????????????????????????????????????????
 
 function updateAuthUI(session) {
+  authState = {
+    authenticated: !!session.authenticated,
+    username: session.username || null,
+    role: session.role || null,
+  };
+
   const btnAdmin = document.getElementById('btnAdmin');
   const userInfo = document.getElementById('userInfo');
   const username = document.getElementById('username');
   const toolbar = document.querySelector('.toolbar');
-  const nodeActions = document.querySelectorAll('.node-actions');
 
-  if (session.authenticated) {
+  if (authState.authenticated) {
     btnAdmin.style.display = 'none';
     userInfo.style.display = 'flex';
-    const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
-    username.textContent = session.username + roleLabel;
+    const roleLabel = authState.role === 'admin' ? ' (Admin)' : ' (Editor)';
+    username.textContent = authState.username + roleLabel;
     if (toolbar) toolbar.classList.add('authenticated');
-    nodeActions.forEach(el => el.classList.add('authenticated'));
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
     if (toolbar) toolbar.classList.remove('authenticated');
-    nodeActions.forEach(el => el.classList.remove('authenticated'));
   }
+
+  syncNodeActionsAuth();
 }
 
 function showLogin() {

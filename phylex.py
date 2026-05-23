@@ -514,7 +514,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   .toolbar { display:none; }
 
   /* Adjust app height without toolbar */
-  .app { height:calc(100vh - 62px); overflow:hidden; }
+  .app { height:calc(100vh - 62px); overflow:auto; }
 
   .header { padding:10px 12px; gap:10px; }
   .header h1 { font-size:16px; }
@@ -565,6 +565,9 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   /* Ensure proper scrolling in horizontal mode */
   .app.horizontal { height:calc(100vh - 62px); overflow:hidden; }
   .graph-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
+  
+  /* Hide export button on mobile */
+  .header .btn-export { display:none; }
 }
 
 @media (max-width: 480px) {

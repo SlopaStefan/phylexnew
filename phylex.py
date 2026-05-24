@@ -486,8 +486,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .leaf-msg { padding:40px; text-align:center; color:#8b949e; font-size:14px; }
 .error-msg { padding:40px; text-align:center; color:#f56565; font-size:14px; }
 .node-id { font-family:monospace; font-size:12px; color:#667eea; margin:3px 0 10px; }
-.node-actions { display:none; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
-.node-actions.authenticated { display:flex; }
+.node-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
 .node-actions .btn-delete { margin-left:auto; }
 #restoreFileInput { display:none; }
 .btn-admin { background:#9f7aea; color:white; }
@@ -514,7 +513,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   .toolbar { display:none; }
 
   /* Adjust app height without toolbar */
-  .app { height:calc(100vh - 62px); overflow:auto; }
+  .app { height:calc(100vh - 62px); overflow:hidden; }
 
   .header { padding:10px 12px; gap:10px; }
   .header h1 { font-size:16px; }
@@ -565,9 +564,6 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   /* Ensure proper scrolling in horizontal mode */
   .app.horizontal { height:calc(100vh - 62px); overflow:hidden; }
   .graph-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
-  
-  /* Hide export button on mobile */
-  .header .btn-export { display:none; }
 }
 
 @media (max-width: 480px) {
@@ -587,21 +583,21 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 <div class="header">
   <h1>&#127807; Phylex [PostgreSQL]</h1>
   <div class="search-wrap">
-      <input type="text" id="searchInput" placeholder="Search species or taxon...">
-      <div class="search-dropdown" id="searchDropdown"></div>
+    <input type="text" id="searchInput" placeholder="Search species or taxon...">
+    <div class="search-dropdown" id="searchDropdown"></div>
+  </div>
+  <button class="tb-btn" id="toggleViewBtn" onclick="toggleView()" style="background:#667eea;color:white;margin-left:auto;">Horizontal Lineage</button>
+  <div class="header-stats" style="margin-left:10px;">
+    <div class="stat-item">
+      <div class="stat-value" id="statTotal">-</div>
+      <div class="stat-label">Total Nodes</div>
     </div>
-    <button class="tb-btn btn-export" onclick="exportCSV()" style="background:#4299e1;color:white;margin-left:auto;">&#8595;&nbsp;Export CSV</button>
-    <div class="header-stats" style="margin-left:10px; display:flex; gap:16px;">
-      <div class="stat-item">
-        <div class="stat-value" id="statTotal">-</div>
-        <div class="stat-label">Total Nodes</div>
-      </div>
-      <div class="stat-item" style="cursor:pointer;" onclick="navigateToHomoSapiens()" title="Click to view Homo sapiens">
-        <div class="stat-value" id="statPath">-</div>
-        <div class="stat-label">Path to <span style="text-decoration:underline;">Homo sapiens</span></div>
-      </div>
-      <div id="authSection">
-        <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Edit Mode</button>
+    <div class="stat-item" style="cursor:pointer;" onclick="navigateToHomoSapiens()" title="Click to view Homo sapiens">
+      <div class="stat-value" id="statPath">-</div>
+      <div class="stat-label">Path to <span style="text-decoration:underline;">Homo sapiens</span></div>
+    </div>
+    <div id="authSection">
+      <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Edit Mode</button>
       <div class="user-info" id="userInfo" style="display:none;">
         <span id="username"></span>
         <button class="tb-btn btn-logout" onclick="logout()">Logout</button>
@@ -655,17 +651,8 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 let currentId = null;
 let currentNode = null;
 let currentFocus = null;
-let authState = {authenticated:false, username:null, role:null};
 let searchTimer = null;
 let viewMode = 'vertical'; // 'vertical' or 'horizontal'
-
-function syncNodeActionsAuth() {
-  const nodeActions = document.querySelectorAll('.node-actions');
-  nodeActions.forEach(el => {
-    if (authState.authenticated) el.classList.add('authenticated');
-    else el.classList.remove('authenticated');
-  });
-}
 
 // ?? Boot ?????????????????????????????????????????????????????????????????????
 
@@ -680,12 +667,7 @@ async function boot() {
     ]);
     updateAuthUI(session);
     updateStats(stats);
-    const startId = localStorage.getItem('currentId') || root.id;
-    try {
-      await navigate(startId);
-    } catch (e) {
-      await navigate(root.id);
-    }
+    await navigate(root.id);
   } catch(e) {
     showError('Could not load root node: ' + e.message);
   }
@@ -700,21 +682,19 @@ function updateStats(stats) {
 
 async function navigate(nodeId) {
   currentId = nodeId;
-  if (window.localStorage) localStorage.setItem('currentId', nodeId);
   if (viewMode === 'vertical') {
-  showMainLoading();
-
-  try {
-    const [node, children, crumbs] = await Promise.all([
-      get('/api/node/' + nodeId),
-      get('/api/children/' + nodeId),
-      get('/api/breadcrumb/' + nodeId),
-    ]);
-    renderSidebar(crumbs);
-    renderMain(node, children);
-  } catch(e) {
-    showError('Navigation error: ' + e.message);
-  }
+    showMainLoading();
+    try {
+      const [node, children, crumbs] = await Promise.all([
+        get('/api/node/' + nodeId),
+        get('/api/children/' + nodeId),
+        get('/api/breadcrumb/' + nodeId),
+      ]);
+      renderSidebar(crumbs);
+      renderMain(node, children);
+    } catch(e) {
+      showError('Navigation error: ' + e.message);
+    }
   } else {
     // Horizontal mode - clear main area and show in graph
     document.getElementById('main').innerHTML = '';
@@ -804,7 +784,6 @@ function renderMain(node, children) {
   }
 
   el.innerHTML = html;
-  syncNodeActionsAuth();
 }
 
 // ?? Search ???????????????????????????????????????????????????????????????????
@@ -1014,30 +993,24 @@ async function handleRestoreFile(event) {
 // ?? Authentication ????????????????????????????????????????????????????
 
 function updateAuthUI(session) {
-  authState = {
-    authenticated: !!session.authenticated,
-    username: session.username || null,
-    role: session.role || null,
-  };
-
   const btnAdmin = document.getElementById('btnAdmin');
   const userInfo = document.getElementById('userInfo');
   const username = document.getElementById('username');
   const toolbar = document.querySelector('.toolbar');
 
-  if (authState.authenticated) {
+  if (session.authenticated) {
     btnAdmin.style.display = 'none';
     userInfo.style.display = 'flex';
-    const roleLabel = authState.role === 'admin' ? ' (Admin)' : ' (Editor)';
-    username.textContent = authState.username + roleLabel;
+    const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
+    username.textContent = session.username + roleLabel;
+    // Show toolbar for authenticated users
     if (toolbar) toolbar.classList.add('authenticated');
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
+    // Hide toolbar for unauthenticated users
     if (toolbar) toolbar.classList.remove('authenticated');
   }
-
-  syncNodeActionsAuth();
 }
 
 function showLogin() {
@@ -1097,29 +1070,6 @@ async function logout() {
   }
 }
 
-// ?? Navigate to Homo sapiens ????????????????????????????????????????????????????????????
-
-async function navigateToHomoSapiens() {
-  try {
-    // Search for Homo sapiens
-    const results = await get('/api/search?q=homo%20sapiens');
-    if (results && results.length > 0) {
-      // Find exact match
-      const exact = results.find(r => r.name.toLowerCase() === 'homo sapiens');
-      if (exact) {
-        await navigate(exact.id);
-      } else {
-        // Use first result
-        await navigate(results[0].id);
-      }
-    } else {
-      showError('Could not find Homo sapiens');
-    }
-  } catch(e) {
-    showError('Error navigating to Homo sapiens: ' + e.message);
-  }
-}
-
 // Allow Enter key to submit login
 document.addEventListener('DOMContentLoaded', () => {
   const loginPassword = document.getElementById('loginPassword');
@@ -1129,6 +1079,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// ?? Navigate to Homo sapiens ????????????????????????????????????????????????????????????
+
+async function navigateToHomoSapiens() {
+  try {
+    // Search for Homo sapiens
+    const results = await get('/api/search?q=homo%20sapiens');
+    if (results && results.length > 0) {
+      // Find exact match
+      const homoSapiens = results.find(r => r.name.toLowerCase() === 'homo sapiens');
+      if (homoSapiens) {
+        navigate(homoSapiens.id);
+      } else {
+        // Use first result if no exact match
+        navigate(results[0].id);
+      }
+    }
+  } catch(e) {
+    console.error('Error navigating to Homo sapiens:', e);
+  }
+}
 
 // ?? View Mode Toggle ????????????????????????????????????????????????????????????
 
@@ -1300,13 +1271,6 @@ boot();
 @app.route("/")
 def index():
     return Response(HTML_TEMPLATE, mimetype="text/html")
-
-@app.route("/favicon.ico")
-def favicon():
-    """Return empty favicon to prevent 404 errors"""
-    # Minimal valid ICO file
-    ico_data = b'\x00\x00\x01\x00\x01\x00\x01\x01\x00\x00\x01\x00\x18\x00\x30\x00\x00\x00\x16\x00\x00\x00\x28\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x01\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-    return Response(ico_data, mimetype='image/x-icon')
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -1921,26 +1885,8 @@ def api_delete(node_id):
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
 
-@app.before_request
-def before_request():
-    """Track request start time"""
-    import time
-    request.start_time = time.time()
-
 @app.after_request
 def add_security_headers(resp):
-    """Add security headers and log request timing"""
-    import time
-
-    # Calculate request duration
-    if hasattr(request, 'start_time'):
-        duration = time.time() - request.start_time
-        duration_ms = duration * 1000
-
-        # Log request with timing
-        user = get_current_user() or 'anonymous'
-        logger.info(f"REQUEST: {request.method} {request.path} | User: {user} | Status: {resp.status_code} | Duration: {duration_ms:.2f}ms")
-
     # Cache control
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
@@ -1997,14 +1943,16 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("Phylogeny Explorer - revised data")
+    print("PHYLEX TREE BROWSER [PostgreSQL]")
     print("="*60)
 
-    # Database and users already loaded at module import
-    # Just log startup info
+    load_db()
+
+    # Load users from database
+    USERS = load_users_from_db()
 
     logger.info("="*60)
-    logger.info("SERVER STARTUP (standalone mode)")
+    logger.info("SERVER STARTUP")
     logger.info(f"Host: {args.host}:{args.port}")
     logger.info(f"Total nodes loaded: {len(state):,}")
     logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")

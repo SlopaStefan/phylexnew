@@ -403,13 +403,13 @@ HTML_TEMPLATE = """
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color:#e6edf3; overflow:hidden; }
-.header { background:#13294b; border-bottom:2px solid #1d3a5f; padding:14px 20px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+.header { background:#13294b; border-bottom:2px solid #1d3a5f; padding:14px 20px; display:flex; align-items:center; gap:20px; }
 .header h1 { font-size:22px; color:#667eea; margin:0; }
 .header-stats { margin-left:auto; display:flex; gap:16px; font-size:13px; color:#8b949e; }
 .stat-item { display:flex; flex-direction:column; align-items:flex-end; }
 .stat-value { font-size:20px; font-weight:600; color:#48bb78; }
 .stat-label { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
-.search-wrap { position:relative; flex:1; max-width:600px; min-width:200px; }
+.search-wrap { position:relative; flex:1; max-width:600px; }
 #searchInput { width:100%; padding:10px 14px; border:1px solid #2d4663; border-radius:6px; background:#0f2942; color:#e6edf3; font-size:14px; }
 #searchInput:focus { outline:none; border-color:#667eea; }
 .search-dropdown { position:absolute; top:100%; left:0; right:0; background:#13294b; border:1px solid #2d4663; border-radius:6px; margin-top:4px; max-height:400px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.4); z-index:100; display:none; }
@@ -442,30 +442,13 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .tb-status.tb-err { color:#f56565; }
 .tb-right { margin-left:auto; display:flex; gap:8px; }
 .app { display:flex; height:calc(100vh - 112px); }
-.app.horizontal { display:flex; flex-direction:column; }
 .sidebar { width:280px; background:#0f2942; border-right:1px solid #1d3a5f; overflow-y:auto; flex-shrink:0; }
-.app.horizontal .sidebar { display:none; }
 .sidebar-title { padding:14px 16px; font-size:12px; font-weight:600; color:#8b949e; text-transform:uppercase; letter-spacing:1px; background:#13294b; border-bottom:1px solid #1d3a5f; }
 .crumb { padding:10px 16px; cursor:pointer; border-left:3px solid transparent; transition:all 0.2s; }
 .crumb:hover { background:#13294b; }
 .crumb.active { background:#13294b; border-left-color:#667eea; color:#667eea; font-weight:500; }
 .crumb.on-path { border-left-color:#48bb78; }
 .main { flex:1; overflow-y:auto; padding:24px; }
-.app.horizontal .main { display:none; }
-.graph-wrap { flex:1; overflow-y:scroll; overflow-x:auto; background:#0a1929; display:none; position:relative; }
-.app.horizontal .graph-wrap { display:block; }
-#graphInner { position:relative; width:auto; height:auto; min-height:100%; }
-#graphSvg { position:absolute; top:0; left:0; pointer-events:none; }
-#graphNodes { position:absolute; top:0; left:0; }
-.line-node { position:absolute; width:180px; min-height:30px; padding:6px 10px; border-radius:6px; background:#16213e; border:1px solid #0f3460; color:#e0e0e0; font-size:12px; box-shadow:0 2px 10px rgba(0,0,0,0.25); cursor:pointer; }
-.line-node:hover { background:#0f3460; }
-.line-node.selected { border-color:#4caf50; background:#0d2b1a; }
-.line-node.on-path { border-left:3px solid #48bb78; }
-.line-node.root { border-color:#667eea; background:#13233d; }
-.line-node .ln-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.line-node .ln-meta { font-size:11px; color:#888; margin-top:2px; }
-.line-path { fill:none; stroke:#9aa4b6; stroke-width:1.5; opacity:0.9; }
-.line-path.on-path { stroke:#48bb78; stroke-width:2; }
 .node-header { background:#13294b; border-radius:8px; padding:20px; margin-bottom:24px; border:1px solid #1d3a5f; }
 .node-header.on-path { border-color:#48bb78; }
 .node-title { font-size:28px; font-weight:600; color:#e6edf3; margin-bottom:8px; }
@@ -506,98 +489,27 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .login-error { color:#f56565; font-size:13px; margin-top:10px; text-align:center; }
 .user-info { display:flex; align-items:center; gap:8px; font-size:13px; color:#48bb78; }
 #restoreFileInput { display:none; }
-
-/* Mobile Responsive Styles */
-@media (max-width: 768px) {
-  /* Hide toolbar completely on mobile - no editing on mobile */
-  .toolbar { display:none; }
-
-  /* Adjust app height without toolbar */
-  .app { height:calc(100vh - 62px); overflow:hidden; }
-
-  .header { padding:10px 12px; gap:10px; }
-  .header h1 { font-size:16px; }
-  .header-stats { display:none; }
-  #toggleViewBtn { font-size:12px; padding:8px 12px; white-space:nowrap; flex-shrink:0; }
-  .search-wrap { flex:1; min-width:120px; }
-  #searchInput { padding:8px 10px; font-size:14px; }
-
-  /* Vertical mode - sidebar hidden, main content scrollable */
-  .sidebar { display:none; }
-  .main { 
-    padding:12px; 
-    width:100%; 
-    overflow-y:auto !important; 
-    -webkit-overflow-scrolling:touch;
-    height:100%;
-  }
-
-  .node-header { padding:16px; margin-bottom:16px; }
-  .node-title { font-size:20px; }
-  .node-id { font-size:11px; }
-  .node-desc { 
-    font-size:13px; 
-    line-height:1.5; 
-    max-height:200px;
-    overflow-y:auto;
-    margin-bottom:12px;
-  }
-  .badges { flex-wrap:wrap; gap:6px; }
-  .badge { font-size:10px; padding:3px 8px; }
-
-  /* Hide edit actions on mobile */
-  .node-actions { display:none; }
-
-  .children-title { font-size:15px; margin-bottom:10px; margin-top:16px; }
-  .children-grid { grid-template-columns:1fr; gap:10px; padding-bottom:20px; }
-  .child-card { padding:12px; }
-  .child-name { font-size:13px; }
-  .child-meta { font-size:11px; }
-
-  .login-box { width:90%; max-width:350px; padding:20px; }
-
-  /* Horizontal view mobile adjustments */
-  .line-node { width:150px; font-size:11px; padding:6px 8px; }
-  .line-node .ln-name { font-size:12px; }
-  .line-node .ln-meta { font-size:10px; }
-
-  /* Ensure proper scrolling in horizontal mode */
-  .app.horizontal { height:calc(100vh - 62px); overflow:hidden; }
-  .graph-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
-}
-
-@media (max-width: 480px) {
-  .header h1 { font-size:14px; }
-  #toggleViewBtn { font-size:11px; padding:6px 10px; }
-
-  .node-header { padding:12px; }
-  .node-title { font-size:18px; }
-  .node-desc { font-size:12px; max-height:150px; }
-
-  .line-node { width:130px; font-size:10px; padding:5px 7px; }
-  .line-node .ln-name { font-size:11px; }
-}
 </style>
 </head>
 <body>
 <div class="header">
   <h1>&#127807; Phylex [PostgreSQL]</h1>
   <div class="search-wrap">
-    <input type="text" id="searchInput" placeholder="Search species or taxon...">
-    <div class="search-dropdown" id="searchDropdown"></div>
-  </div>
-  <button class="tb-btn" id="toggleViewBtn" onclick="toggleView()" style="background:#667eea;color:white;margin-left:auto;">Horizontal Lineage</button>
-  <div class="header-stats" style="margin-left:10px;">
-    <div class="stat-item">
-      <div class="stat-value" id="statTotal">-</div>
-      <div class="stat-label">Total Nodes</div>
+      <input type="text" id="searchInput" placeholder="Search species or taxon...">
+      <div class="search-dropdown" id="searchDropdown"></div>
     </div>
-    <div class="stat-item" style="cursor:pointer;" onclick="navigateToHomoSapiens()" title="Click to view Homo sapiens">
-      <div class="stat-value" id="statPath">-</div>
-      <div class="stat-label">Path to <span style="text-decoration:underline;">Homo sapiens</span></div>
-    </div>
-    <div id="authSection">
-      <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Edit Mode</button>
+    <button class="tb-btn btn-export" onclick="exportCSV()" style="background:#4299e1;color:white;margin-left:auto;">&#8595;&nbsp;Export CSV</button>
+    <div class="header-stats" style="margin-left:10px;">
+      <div class="stat-item">
+        <div class="stat-value" id="statTotal">-</div>
+        <div class="stat-label">Total Nodes</div>
+      </div>
+      <div class="stat-item" style="cursor:pointer;" onclick="navigateToHomoSapiens()" title="Click to view Homo sapiens">
+        <div class="stat-value" id="statPath">-</div>
+        <div class="stat-label">Path to <span style="text-decoration:underline;">Homo sapiens</span></div>
+      </div>
+      <div id="authSection">
+        <button class="tb-btn btn-admin" id="btnAdmin" onclick="showLogin()">Edit Mode</button>
       <div class="user-info" id="userInfo" style="display:none;">
         <span id="username"></span>
         <button class="tb-btn btn-logout" onclick="logout()">Logout</button>
@@ -634,25 +546,18 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
   </div>
 </div>
 
-<div class="app" id="app">
+<div class="app">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-title">Path</div>
   </div>
   <div class="main" id="main"></div>
-  <div class="graph-wrap">
-    <div id="graphInner">
-      <svg id="graphSvg"></svg>
-      <div id="graphNodes"></div>
-    </div>
-  </div>
 </div>
 
 <script>
 let currentId = null;
 let currentNode = null;
-let currentFocus = null;
 let searchTimer = null;
-let viewMode = 'vertical'; // 'vertical' or 'horizontal'
+let isAuthenticated = false;
 
 // ?? Boot ?????????????????????????????????????????????????????????????????????
 
@@ -682,29 +587,18 @@ function updateStats(stats) {
 
 async function navigate(nodeId) {
   currentId = nodeId;
-  if (viewMode === 'vertical') {
-    showMainLoading();
-    try {
-      const [node, children, crumbs] = await Promise.all([
-        get('/api/node/' + nodeId),
-        get('/api/children/' + nodeId),
-        get('/api/breadcrumb/' + nodeId),
-      ]);
-      renderSidebar(crumbs);
-      renderMain(node, children);
-    } catch(e) {
-      showError('Navigation error: ' + e.message);
-    }
-  } else {
-    // Horizontal mode - clear main area and show in graph
-    document.getElementById('main').innerHTML = '';
-    try {
-      const focus = await get('/api/focus/' + nodeId);
-      currentFocus = focus;
-      renderFocusGraph(focus);
-    } catch(e) {
-      showError('Navigation error: ' + e.message);
-    }
+  showMainLoading();
+
+  try {
+    const [node, children, crumbs] = await Promise.all([
+      get('/api/node/' + nodeId),
+      get('/api/children/' + nodeId),
+      get('/api/breadcrumb/' + nodeId),
+    ]);
+    renderSidebar(crumbs);
+    renderMain(node, children);
+  } catch(e) {
+    showError('Navigation error: ' + e.message);
   }
 }
 
@@ -759,9 +653,11 @@ function renderMain(node, children) {
       ${desc}
       ${traits}
       <div class="node-actions">
-        <button class="tb-btn btn-edit" onclick="renameNode()">Rename Node</button>
-        <button class="tb-btn btn-edit" onclick="editDescription()">Edit Description</button>
-        <button class="tb-btn btn-delete" onclick="deleteCurrentNode()">Delete Node</button>
+        ${isAuthenticated ? `
+          <button class="tb-btn btn-edit" onclick="renameNode()">Rename Node</button>
+          <button class="tb-btn btn-edit" onclick="editDescription()">Edit Description</button>
+          <button class="tb-btn btn-delete" onclick="deleteCurrentNode()">Delete Node</button>
+        ` : ''}
       </div>
     </div>
   `;
@@ -998,17 +894,17 @@ function updateAuthUI(session) {
   const username = document.getElementById('username');
   const toolbar = document.querySelector('.toolbar');
 
+  isAuthenticated = session.authenticated;
+
   if (session.authenticated) {
     btnAdmin.style.display = 'none';
     userInfo.style.display = 'flex';
     const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
     username.textContent = session.username + roleLabel;
-    // Show toolbar for authenticated users
     if (toolbar) toolbar.classList.add('authenticated');
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
-    // Hide toolbar for unauthenticated users
     if (toolbar) toolbar.classList.remove('authenticated');
   }
 }
@@ -1070,6 +966,29 @@ async function logout() {
   }
 }
 
+// ?? Navigate to Homo sapiens ????????????????????????????????????????????????????????????
+
+async function navigateToHomoSapiens() {
+  try {
+    // Search for Homo sapiens
+    const results = await get('/api/search?q=homo%20sapiens');
+    if (results && results.length > 0) {
+      // Find exact match
+      const exact = results.find(r => r.name.toLowerCase() === 'homo sapiens');
+      if (exact) {
+        await navigate(exact.id);
+      } else {
+        // Use first result
+        await navigate(results[0].id);
+      }
+    } else {
+      showError('Could not find Homo sapiens');
+    }
+  } catch(e) {
+    showError('Error navigating to Homo sapiens: ' + e.message);
+  }
+}
+
 // Allow Enter key to submit login
 document.addEventListener('DOMContentLoaded', () => {
   const loginPassword = document.getElementById('loginPassword');
@@ -1079,187 +998,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
-
-// ?? Navigate to Homo sapiens ????????????????????????????????????????????????????????????
-
-async function navigateToHomoSapiens() {
-  try {
-    // Search for Homo sapiens
-    const results = await get('/api/search?q=homo%20sapiens');
-    if (results && results.length > 0) {
-      // Find exact match
-      const homoSapiens = results.find(r => r.name.toLowerCase() === 'homo sapiens');
-      if (homoSapiens) {
-        navigate(homoSapiens.id);
-      } else {
-        // Use first result if no exact match
-        navigate(results[0].id);
-      }
-    }
-  } catch(e) {
-    console.error('Error navigating to Homo sapiens:', e);
-  }
-}
-
-// ?? View Mode Toggle ????????????????????????????????????????????????????????????
-
-function toggleView() {
-  if (viewMode === 'vertical') {
-    viewMode = 'horizontal';
-    document.getElementById('app').classList.add('horizontal');
-    document.getElementById('toggleViewBtn').textContent = 'Vertical Lineage';
-    navigate(currentId);
-  } else {
-    viewMode = 'vertical';
-    document.getElementById('app').classList.remove('horizontal');
-    document.getElementById('toggleViewBtn').textContent = 'Horizontal Lineage';
-    navigate(currentId);
-  }
-}
-
-// ?? Horizontal Lineage Rendering ????????????????????????????????????????????????????????????
-
-function renderFocusGraph(focus) {
-  const svg = document.getElementById('graphSvg');
-  const nodesLayer = document.getElementById('graphNodes');
-  const inner = document.getElementById('graphInner');
-  svg.innerHTML = '';
-  nodesLayer.innerHTML = '';
-
-  // Sliding window: show only last 5 levels to avoid horizontal scroll
-  const MAX_LEVELS = 5;
-  const allLevels = focus.levels;
-  const startLevel = Math.max(0, allLevels.length - MAX_LEVELS);
-  const visibleLevels = allLevels.slice(startLevel);
-
-  if (visibleLevels.length === 0) return;
-
-  const xStep = 240;
-  const startX = 40;
-  const nodeW = 180;
-  const nodeH = 34;
-  const rowGap = 44;
-  const positions = {};
-  const edges = [];
-
-  // Build a complete picture of what to render
-  // Column 0: First parent in visible levels
-  // Column 1: Its children (from level 0)
-  // Column 2: Children of the selected child from column 1 (from level 1)
-  // etc.
-
-  visibleLevels.forEach((level, colIndex) => {
-    const parentId = level.parent.id;
-    const children = level.nodes || [];
-
-    // Position parent in its column if not already positioned
-    if (!positions[parentId]) {
-      const parentX = startX + colIndex * xStep;
-      positions[parentId] = {x: parentX, y: 0};
-    }
-
-    // Position all children in the next column
-    if (children.length > 0) {
-      const parentY = positions[parentId].y;
-      const childX = startX + (colIndex + 1) * xStep;
-      const totalHeight = (children.length - 1) * rowGap;
-      const startY = parentY - totalHeight / 2;
-
-      children.forEach((child, idx) => {
-        const childY = startY + idx * rowGap;
-        positions[child.id] = {x: childX, y: childY};
-
-        // Create edge from parent to this child
-        const isOnPath = child.on_path && level.parent.on_path;
-        edges.push({from: parentId, to: child.id, onPath: isOnPath});
-      });
-    }
-  });
-
-  // Calculate bounds
-  let minY = Infinity;
-  let maxY = -Infinity;
-  let maxX = 0;
-  Object.values(positions).forEach(p => {
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
-    maxX = Math.max(maxX, p.x);
-  });
-
-  // Add padding at top and bottom
-  const topPadding = 60;
-  const bottomPadding = 60;
-
-  // Always shift so minimum Y is at topPadding
-  const shiftY = topPadding - minY;
-
-  // Calculate container dimensions to fit all content
-  const width = maxX + nodeW + 80;
-  const height = (maxY - minY) + topPadding + bottomPadding;
-
-  inner.style.width = width + 'px';
-  inner.style.height = height + 'px';
-
-  // Set SVG to same size - no viewBox, direct pixel coordinates
-  svg.style.width = width + 'px';
-  svg.style.height = height + 'px';
-  svg.removeAttribute('viewBox');
-
-  // Apply shift to all positions
-  Object.keys(positions).forEach(id => {
-    positions[id].y += shiftY;
-  });
-
-  // Draw edges using final positions
-  edges.forEach(e => {
-    const a = positions[e.from];
-    const b = positions[e.to];
-
-    if (!a || !b) return;
-
-    const x1 = a.x + nodeW;
-    const y1 = a.y + nodeH / 2;
-    const x2 = b.x;
-    const y2 = b.y + nodeH / 2;
-    const cx1 = x1 + 35;
-    const cx2 = x2 - 35;
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`);
-    path.setAttribute('class', e.onPath ? 'line-path on-path' : 'line-path');
-    svg.appendChild(path);
-  });
-
-  // Render nodes using final positions
-  Object.keys(positions).forEach(id => {
-    const p = positions[id];
-    const d = findNodeInFocus(focus, id);
-    if (!d) return;
-
-    const div = document.createElement('div');
-    let classes = 'line-node';
-    if (id === focus.focus.id) classes += ' selected';
-    if (id === visibleLevels[0]?.parent.id) classes += ' root';
-    if (d.on_path) classes += ' on-path';
-
-    div.className = classes;
-    div.style.left = p.x + 'px';
-    div.style.top = p.y + 'px';
-    div.innerHTML = `<div class="ln-name">${esc(d.name)}</div><div class="ln-meta">${d.child_count} children</div>`;
-    div.onclick = () => navigate(id);
-    nodesLayer.appendChild(div);
-  });
-}
-
-function findNodeInFocus(focus, id) {
-  if (focus.root.id === id) return focus.root;
-  if (focus.focus.id === id) return focus.focus;
-  for (const c of focus.breadcrumb) if (c.id === id) return c;
-  for (const level of focus.levels) {
-    if (level.parent.id === id) return level.parent;
-    for (const n of level.nodes) if (n.id === id) return n;
-  }
-  return null;
-}
 
 // Boot
 boot();
@@ -1271,6 +1009,13 @@ boot();
 @app.route("/")
 def index():
     return Response(HTML_TEMPLATE, mimetype="text/html")
+
+@app.route("/favicon.ico")
+def favicon():
+    """Return empty favicon to prevent 404 errors"""
+    # Minimal valid ICO file
+    ico_data = b'\x00\x00\x01\x00\x01\x00\x01\x01\x00\x00\x01\x00\x18\x00\x30\x00\x00\x00\x16\x00\x00\x00\x28\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x01\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+    return Response(ico_data, mimetype='image/x-icon')
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -1373,8 +1118,7 @@ def api_children(node_id):
             "child_count": len(parent_children.get(cid, [])),
             "on_path": cid in homo_path_ids,
         })
-    # Sort: nodes with children first, then leaves; within each group, alphabetically
-    kids.sort(key=lambda x: (x["child_count"] == 0, x["name"].lower()))
+    kids.sort(key=lambda x: x["name"].lower())
     return jsonify(kids)
 
 @app.route("/api/breadcrumb/<node_id>")
@@ -1397,68 +1141,6 @@ def api_breadcrumb(node_id):
 
     crumbs.reverse()
     return jsonify(crumbs)
-
-@app.route("/api/focus/<node_id>")
-def api_focus(node_id):
-    """Return focus data for horizontal lineage view"""
-    if node_id not in state:
-        # Fall back to root
-        all_ids = set(state.keys())
-        life_id = name_to_id.get("life")
-        if not life_id:
-            for cid, d in state.items():
-                p = d.get("parent")
-                if not p or str(p) not in all_ids:
-                    life_id = cid
-                    break
-        if not life_id:
-            return jsonify({"error": "not found"}), 404
-        node_id = life_id
-
-    # Build breadcrumb from root to this node
-    crumbs = []
-    cur = node_id
-    seen = set()
-    all_ids = set(state.keys())
-    while cur and cur not in seen and cur in state:
-        seen.add(cur)
-        crumbs.append(cur)
-        p = state[cur].get("parent")
-        cur = str(p) if p and str(p) in all_ids else None
-    crumbs.reverse()
-
-    if not crumbs:
-        return jsonify({"error": "not found"}), 404
-
-    # Build levels for each ancestor in the path
-    levels = []
-    for i, cid in enumerate(crumbs):
-        children = []
-        for child_id in parent_children.get(cid, []):
-            child_data = state.get(child_id, {})
-            children.append({
-                "id": child_id,
-                "name": (child_data.get("name") or "").strip(),
-                "extant": child_data.get("extant"),
-                "child_count": len(parent_children.get(child_id, [])),
-                "on_path": child_id in homo_path_ids,
-                "selected": (i + 1 < len(crumbs) and crumbs[i + 1] == child_id)
-            })
-        # Sort: nodes with children first, then leaves
-        children.sort(key=lambda x: (x["child_count"] == 0, x["name"].lower()))
-
-        levels.append({
-            "parent": node_dict(cid),
-            "expanded_child_id": crumbs[i + 1] if i + 1 < len(crumbs) else None,
-            "nodes": children
-        })
-
-    return jsonify({
-        "root": node_dict(crumbs[0]),
-        "focus": node_dict(node_id),
-        "breadcrumb": [node_dict(cid) for cid in crumbs],
-        "levels": levels
-    })
 
 @app.route("/api/search")
 def api_search():
@@ -1885,8 +1567,26 @@ def api_delete(node_id):
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
 
+@app.before_request
+def before_request():
+    """Track request start time"""
+    import time
+    request.start_time = time.time()
+
 @app.after_request
 def add_security_headers(resp):
+    """Add security headers and log request timing"""
+    import time
+
+    # Calculate request duration
+    if hasattr(request, 'start_time'):
+        duration = time.time() - request.start_time
+        duration_ms = duration * 1000
+
+        # Log request with timing
+        user = get_current_user() or 'anonymous'
+        logger.info(f"REQUEST: {request.method} {request.path} | User: {user} | Status: {resp.status_code} | Duration: {duration_ms:.2f}ms")
+
     # Cache control
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
@@ -1943,16 +1643,14 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("PHYLEX TREE BROWSER [PostgreSQL]")
+    print("Phylogeny Explorer - revised data")
     print("="*60)
 
-    load_db()
-
-    # Load users from database
-    USERS = load_users_from_db()
+    # Database and users already loaded at module import
+    # Just log startup info
 
     logger.info("="*60)
-    logger.info("SERVER STARTUP")
+    logger.info("SERVER STARTUP (standalone mode)")
     logger.info(f"Host: {args.host}:{args.port}")
     logger.info(f"Total nodes loaded: {len(state):,}")
     logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")

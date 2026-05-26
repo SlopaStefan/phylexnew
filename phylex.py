@@ -489,6 +489,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .node-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
 body:not(.authenticated) .node-actions { display:none; }
 body.authenticated .node-actions { display:flex; }
+body.authenticated #exportCSVHeaderBtn { display:none; }
 .node-actions .btn-delete { margin-left:auto; }
 #restoreFileInput { display:none; }
 .btn-admin { background:#9f7aea; color:white; }
@@ -589,6 +590,7 @@ body.authenticated .node-actions { display:flex; }
     <div class="search-dropdown" id="searchDropdown"></div>
   </div>
   <button class="tb-btn" id="toggleViewBtn" onclick="toggleView()" style="background:#667eea;color:white;margin-left:auto;">Horizontal Lineage</button>
+  <button class="tb-btn btn-export" id="exportCSVHeaderBtn" onclick="exportCSV()" style="margin-left:8px;">&#8595;&nbsp;Export CSV</button>
   <div class="header-stats" style="margin-left:10px;">
     <div class="stat-item">
       <div class="stat-value" id="statTotal">-</div>

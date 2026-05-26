@@ -487,6 +487,8 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .error-msg { padding:40px; text-align:center; color:#f56565; font-size:14px; }
 .node-id { font-family:monospace; font-size:12px; color:#667eea; margin:3px 0 10px; }
 .node-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+body:not(.authenticated) .node-actions { display:none; }
+body.authenticated .node-actions { display:flex; }
 .node-actions .btn-delete { margin-left:auto; }
 #restoreFileInput { display:none; }
 .btn-admin { background:#9f7aea; color:white; }
@@ -581,7 +583,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 </head>
 <body>
 <div class="header">
-  <h1>&#127807; Phylex [PostgreSQL]</h1>
+  <h1>&#127807; Phylogeny explorer - revised</h1>
   <div class="search-wrap">
     <input type="text" id="searchInput" placeholder="Search species or taxon...">
     <div class="search-dropdown" id="searchDropdown"></div>
@@ -1003,13 +1005,15 @@ function updateAuthUI(session) {
     userInfo.style.display = 'flex';
     const roleLabel = session.role === 'admin' ? ' (Admin)' : ' (Editor)';
     username.textContent = session.username + roleLabel;
-    // Show toolbar for authenticated users
+    // Show toolbar and node actions for authenticated users
     if (toolbar) toolbar.classList.add('authenticated');
+    document.body.classList.add('authenticated');
   } else {
     btnAdmin.style.display = 'block';
     userInfo.style.display = 'none';
-    // Hide toolbar for unauthenticated users
+    // Hide toolbar and node actions for unauthenticated users
     if (toolbar) toolbar.classList.remove('authenticated');
+    document.body.classList.remove('authenticated');
   }
 }
 

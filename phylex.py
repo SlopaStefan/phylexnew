@@ -13,6 +13,7 @@ import secrets
 import os
 import re
 import logging
+import gzip
 from datetime import datetime
 from flask import Flask, jsonify, request, Response, session
 import psycopg2
@@ -64,6 +65,7 @@ PG_CONFIG_WRITE = {
     'sslmode': 'require'
 }
 
+
 def get_client_ip():
     """Get the real client IP address, handling proxies"""
     # Check X-Forwarded-For header (from proxies/load balancers)
@@ -109,6 +111,9 @@ def audit_log(action, details=None, user=None, status='SUCCESS'):
         logger.warning(log_message)
     else:
         logger.info(log_message)
+
+# Plaintext password verification (passwords stored in clear text in database)
+logger.info("Using plaintext password verification")
 
 def verify_password(password, stored_password):
     """Verify password against plaintext stored password"""
@@ -223,11 +228,64 @@ def sanitize_error(error_msg):
         return "Permission denied"
     return "An error occurred"
 
-# -- In-memory state (loaded from PostgreSQL) --
-state = {}
-name_to_id = {}
-parent_children = defaultdict(list)
-homo_path_ids = set()
+# -- Database Query Helpers --
+# Hybrid approach: Cache Homo sapiens path for performance, fetch everything else from DB
+# This ensures real-time synchronization while maintaining fast page loads
+
+import time
+
+# Cache for Homo sapiens path with TTL
+_homo_path_cache = {
+    'path_ids': set(),
+    'timestamp': 0,
+    'ttl': 30  # 30 second cache
+}
+
+# Cache for stats with TTL
+_stats_cache = {
+    'total_nodes': 0,
+    'homo_path_nodes': 0,
+    'timestamp': 0,
+    'ttl': 300  # 5 minute cache for stats (will be set at startup)
+}
+
+def initialize_stats_cache():
+    """Calculate and cache stats at application startup"""
+    global _stats_cache
+
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+
+        # Get total count
+        cursor.execute("SELECT COUNT(*) as count FROM clades")
+        row = cursor.fetchone()
+        total = row['count'] if row else 0
+
+        # Get Homo sapiens path count
+        cursor.execute("""
+            SELECT node_id FROM clades WHERE LOWER(node_name) = 'homo sapiens'
+        """)
+        hs_row = cursor.fetchone()
+
+        if hs_row:
+            path = get_path_to_root(hs_row['node_id'])
+            homo_count = len(path)
+        else:
+            homo_count = 0
+
+        cursor.close()
+        conn.close()
+
+        # Cache the results
+        _stats_cache['total_nodes'] = total
+        _stats_cache['homo_path_nodes'] = homo_count
+        _stats_cache['timestamp'] = time.time()
+
+        logger.info(f"Stats initialized: {total:,} total nodes, {homo_count} on Homo sapiens path")
+
+    except Exception as e:
+        logger.error(f"Error initializing stats cache: {e}")
 
 def get_db(readonly=False):
     """Get database connection based on user role"""
@@ -245,76 +303,226 @@ def get_user_role():
         return None
     return USERS.get(user, {}).get('role')
 
-def load_db():
-    """Load phylogenetic tree from PostgreSQL into memory"""
-    global state, name_to_id, parent_children, homo_path_ids
-
+def get_node_from_db(node_id):
+    """Fetch a single node from database"""
     try:
-        logger.info("="*60)
-        logger.info("DATABASE CONNECTION")
-        logger.info("="*60)
-        logger.info(f"Host: {os.environ.get('DB_HOST', 'NOT SET')}")
-        logger.info(f"Database: {os.environ.get('DB_NAME', 'NOT SET')}")
-        logger.info(f"User: {os.environ.get('DB_USER_RO', 'NOT SET')}")
-        logger.info(f"SSL Mode: require")
-        logger.info("="*60)
-
-        print("Connecting to PostgreSQL...", flush=True)
-        conn = get_db(readonly=True)  # Use readonly for loading
+        conn = get_db(readonly=True)
         cursor = conn.cursor()
-
-        print("Loading clades into RAM...", flush=True)
         cursor.execute("""
             SELECT node_id, node_name, parent_id, description, era
             FROM clades
-        """)
+            WHERE node_id = %s
+        """, (node_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return row
+    except Exception as e:
+        logger.error(f"Error fetching node {node_id}: {e}")
+        return None
 
+def get_children_from_db(parent_id):
+    """Fetch children of a node from database"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT node_id, node_name, parent_id
+            FROM clades
+            WHERE parent_id = %s
+            ORDER BY node_name
+        """, (parent_id,))
         rows = cursor.fetchall()
-        state = {}
-        name_to_id = {}
-        parent_children = defaultdict(list)
+        cursor.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching children of {parent_id}: {e}")
+        return []
 
+def count_children_from_db(node_id):
+    """Count children of a node from database"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM clades
+            WHERE parent_id = %s
+        """, (node_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return row['count'] if row else 0
+    except Exception as e:
+        logger.error(f"Error counting children of {node_id}: {e}")
+        return 0
+
+def get_batch_child_counts(node_ids):
+    """Get child counts for multiple nodes in a single query - returns dict {node_id: count}"""
+    if not node_ids:
+        return {}
+
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT parent_id, COUNT(*) as count
+            FROM clades
+            WHERE parent_id = ANY(%s)
+            GROUP BY parent_id
+        """, (list(node_ids),))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Build dict with default 0 for nodes with no children
+        counts = {nid: 0 for nid in node_ids}
         for row in rows:
-            clade_id = row['node_id']
-            state[clade_id] = {
-                'name': row['node_name'],
-                'parent': row['parent_id'],
-                'description': row['description'],
-                'era': row['era']
-            }
+            counts[row['parent_id']] = row['count']
 
-            # Build name index
-            if row['node_name']:
-                name_to_id[row['node_name'].lower()] = clade_id
+        return counts
+    except Exception as e:
+        logger.error(f"Error getting batch child counts: {e}")
+        return {nid: 0 for nid in node_ids}
 
-            # Build parent-children map
-            if row['parent_id']:
-                parent_children[row['parent_id']].append(clade_id)
+def get_path_to_root(node_id):
+    """Get path from node to root"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+
+        path = []
+        current_id = node_id
+        seen = set()
+        max_depth = 100  # Prevent infinite loops
+
+        while current_id and current_id not in seen and len(path) < max_depth:
+            cursor.execute("""
+                SELECT node_id, node_name, parent_id
+                FROM clades
+                WHERE node_id = %s
+            """, (current_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                break
+
+            seen.add(current_id)
+            path.append(row)
+            current_id = row['parent_id']
+
+        cursor.close()
+        conn.close()
+        return path
+    except Exception as e:
+        logger.error(f"Error getting path to root from {node_id}: {e}")
+        return []
+
+def is_on_homo_path(node_id):
+    """Check if node is on path to Homo sapiens"""
+    path_ids = get_homo_path_ids()
+    return node_id in path_ids
+
+def get_homo_path_ids():
+    """Get set of all node IDs on path to Homo sapiens - cached for 30 seconds"""
+    global _homo_path_cache
+
+    current_time = time.time()
+
+    # Check if cache is still valid
+    if current_time - _homo_path_cache['timestamp'] < _homo_path_cache['ttl']:
+        return _homo_path_cache['path_ids']
+
+    # Cache expired, refresh from database
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+
+        # Find Homo sapiens
+        cursor.execute("""
+            SELECT node_id FROM clades WHERE LOWER(node_name) = 'homo sapiens'
+        """)
+        hs_row = cursor.fetchone()
+
+        if not hs_row:
+            cursor.close()
+            conn.close()
+            _homo_path_cache['path_ids'] = set()
+            _homo_path_cache['timestamp'] = current_time
+            return set()
+
+        # Get path from Homo sapiens to root
+        hs_path = get_path_to_root(hs_row['node_id'])
+        hs_path_ids = {row['node_id'] for row in hs_path}
 
         cursor.close()
         conn.close()
 
-        print(f"  {len(state):,} live clades", flush=True)
-        logger.info(f"Loaded {len(state):,} clades successfully")
+        # Update cache
+        _homo_path_cache['path_ids'] = hs_path_ids
+        _homo_path_cache['timestamp'] = current_time
 
-        # Build homo sapiens path
-        _rebuild_homo_path()
-        print(f"  Path to Homo sapiens: {len(homo_path_ids)} nodes", flush=True)
-        logger.info(f"Homo sapiens path: {len(homo_path_ids)} nodes")
-
+        return hs_path_ids
     except Exception as e:
-        logger.error("="*60)
-        logger.error("FATAL ERROR: Failed to load database!")
-        logger.error("="*60)
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error message: {str(e)}")
-        logger.error(f"DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
-        logger.error(f"DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
-        logger.error(f"DB_USER_RO: {os.environ.get('DB_USER_RO', 'NOT SET')}")
-        logger.error("="*60)
-        import traceback
-        logger.error(traceback.format_exc())
-        raise  # Re-raise to prevent app from starting with no data
+        logger.error(f"Error getting homo path: {e}")
+        return _homo_path_cache.get('path_ids', set())
+
+def invalidate_homo_path_cache():
+    """Force refresh of Homo sapiens path cache - call after tree structure changes"""
+    global _homo_path_cache
+    _homo_path_cache['timestamp'] = 0
+
+def check_nodes_on_homo_path(node_ids):
+    """Check multiple nodes at once - returns dict {node_id: True/False}"""
+    if not node_ids:
+        return {}
+
+    path_ids = get_homo_path_ids()
+    return {nid: (nid in path_ids) for nid in node_ids}
+
+def get_total_node_count():
+    """Get total count of nodes - returns cached value from startup"""
+    return _stats_cache.get('total_nodes', 0)
+
+def get_homo_path_count():
+    """Get count of nodes on path to Homo sapiens - returns cached value"""
+    return _stats_cache.get('homo_path_nodes', 0)
+
+def refresh_stats_cache():
+    """Refresh stats cache - call after adding/deleting nodes"""
+    initialize_stats_cache()
+
+def get_root_node():
+    """Find and return the root node (node with no parent)"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+
+        # First try to find 'Life' node
+        cursor.execute("""
+            SELECT node_id FROM clades WHERE LOWER(node_name) = 'life'
+        """)
+        row = cursor.fetchone()
+
+        if row:
+            cursor.close()
+            conn.close()
+            return row['node_id']
+
+        # Otherwise find any node with no parent
+        cursor.execute("""
+            SELECT node_id FROM clades WHERE parent_id IS NULL LIMIT 1
+        """)
+        row = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        return row['node_id'] if row else None
+    except Exception as e:
+        logger.error(f"Error finding root node: {e}")
+        return None
 
 def require_auth(min_role='editor'):
     """Decorator to require authentication for endpoints"""
@@ -344,40 +552,56 @@ def require_auth(min_role='editor'):
         return wrapped
     return decorator
 
-def _rebuild_homo_path():
-    """Rebuild the path from root to Homo sapiens"""
-    global homo_path_ids
-    homo_path_ids = set()
-    all_ids = set(state.keys())
-    hs_id = name_to_id.get("homo sapiens")
+def node_dict(node_row, skip_child_count=False, skip_path_check=False):
+    """Convert database row to API response format
 
-    if hs_id:
-        cur = hs_id
-        while cur:
-            homo_path_ids.add(cur)
-            p = (state.get(cur) or {}).get("parent")
-            cur = str(p) if p and str(p) in all_ids else None
+    Args:
+        node_row: Database row with node data
+        skip_child_count: If True, skip counting children (performance optimization)
+        skip_path_check: If True, skip checking homo path (performance optimization)
+    """
+    if not node_row:
+        return None
 
-def node_dict(cid):
-    """Convert internal node data to API response format"""
-    d = state.get(cid, {})
-    pid = str(d.get("parent", "") or "")
+    cid = node_row['node_id']
+    pid = node_row['parent_id'] or ""
+
+    # Get parent name if parent exists
+    parent_name = ""
+    if pid:
+        parent_row = get_node_from_db(pid)
+        if parent_row:
+            parent_name = (parent_row['node_name'] or "").strip()
+
+    # Count children (expensive operation - can be skipped)
+    if skip_child_count:
+        child_count = 0
+    else:
+        child_count = count_children_from_db(cid)
+
+    # Check if on homo sapiens path (uses cache, so fast)
+    if skip_path_check:
+        on_path = False
+    else:
+        on_path = is_on_homo_path(cid)
 
     return {
         "id": cid,
-        "name": (d.get("name") or "").strip(),
-        "description": (d.get("description") or "").strip(),
-        "era": (d.get("era") or "").strip(),
+        "name": (node_row['node_name'] or "").strip(),
+        "description": (node_row['description'] or "").strip(),
+        "era": (node_row['era'] or "").strip(),
         "parent_id": pid,
-        "child_count": len(parent_children.get(cid, [])),
-        "on_path": cid in homo_path_ids,
+        "parent_name": parent_name,
+        "child_count": child_count,
+        "on_path": on_path,
     }
 
 def _generate_node_id():
-    """Generate a unique node ID"""
+    """Generate a unique node ID - checks database instead of memory"""
     while True:
         nid = secrets.token_hex(12)
-        if nid not in state:
+        # Check if ID exists in database
+        if not get_node_from_db(nid):
             return nid
 
 # -- API Routes --
@@ -1044,7 +1268,7 @@ function renderMain(node, children) {
     <div class="description-panel">
       <div class="${eraLabelClass}" title="Era: ${eraText}">Era: ${eraText}</div>
       <div class="${descClass}"${node.description ? '' : ' style="color:#666"'}>${descText}</div>
-      ${renderEraTimeline(node.era, node.extant)}
+      ${renderEraTimeline(node.era)}
     </div>`;
 
   const safeName = esc(node.name).replace(/\\n/g, ' ');
@@ -1574,7 +1798,19 @@ boot();
 
 @app.route("/")
 def index():
-    return Response(HTML_TEMPLATE, mimetype="text/html")
+    """Serve HTML with gzip compression"""
+    # Check if client accepts gzip
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+
+    if 'gzip' in accept_encoding:
+        # Compress HTML
+        compressed = gzip.compress(HTML_TEMPLATE.encode('utf-8'))
+        response = Response(compressed, mimetype="text/html")
+        response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Vary'] = 'Accept-Encoding'
+        return response
+    else:
+        return Response(HTML_TEMPLATE, mimetype="text/html")
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -1635,99 +1871,146 @@ def api_session():
 
 @app.route("/api/stats")
 def api_stats():
-    """Return database statistics"""
+    """Return database statistics - fetched directly from database"""
     return jsonify({
-        "total_nodes": len(state),
-        "homo_path_nodes": len(homo_path_ids)
+        "total_nodes": get_total_node_count(),
+        "homo_path_nodes": get_homo_path_count()
     })
 
 @app.route("/api/root")
 def api_root():
-    """Return the root node"""
-    all_ids = set(state.keys())
-    life_id = name_to_id.get("life")
+    """Return the root node - optimized query"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
 
-    if not life_id:
-        for cid, d in state.items():
-            p = d.get("parent")
-            if not p or str(p) not in all_ids:
-                life_id = cid
-                break
+        # Find root node
+        cursor.execute("""
+            SELECT node_id FROM clades WHERE LOWER(node_name) = 'life'
+        """)
+        row = cursor.fetchone()
 
-    if not life_id:
-        return jsonify({"error": "root not found"}), 404
+        if not row:
+            cursor.execute("""
+                SELECT node_id FROM clades WHERE parent_id IS NULL LIMIT 1
+            """)
+            row = cursor.fetchone()
 
-    return jsonify(node_dict(life_id))
+        if not row:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "root not found"}), 404
+
+        root_id = row['node_id']
+
+        # Get root node with child count in single query
+        cursor.execute("""
+            SELECT c.node_id, c.node_name, c.parent_id, c.description, c.era,
+                   COUNT(children.node_id) as child_count
+            FROM clades c
+            LEFT JOIN clades children ON children.parent_id = c.node_id
+            WHERE c.node_id = %s
+            GROUP BY c.node_id, c.node_name, c.parent_id, c.description, c.era
+        """, (root_id,))
+
+        root_row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not root_row:
+            return jsonify({"error": "root not found"}), 404
+
+        # Build response manually to avoid node_dict overhead
+        on_path = is_on_homo_path(root_id)
+
+        return jsonify({
+            "id": root_row['node_id'],
+            "name": (root_row['node_name'] or "").strip(),
+            "description": (root_row['description'] or "").strip(),
+            "era": (root_row['era'] or "").strip(),
+            "parent_id": "",
+            "parent_name": "",
+            "child_count": root_row['child_count'],
+            "on_path": on_path,
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_root: {e}")
+        return jsonify({"error": "Internal error"}), 500
 
 @app.route("/api/node/<node_id>")
 def api_node(node_id):
-    if node_id not in state:
+    """Get node data - fetched directly from database"""
+    node_row = get_node_from_db(node_id)
+    if not node_row:
         return jsonify({"error": "not found"}), 404
-    return jsonify(node_dict(node_id))
+    return jsonify(node_dict(node_row))
 
 @app.route("/api/children/<node_id>")
 def api_children(node_id):
+    """Get children of a node - fetched directly from database"""
+    children_rows = get_children_from_db(node_id)
+
+    if not children_rows:
+        return jsonify([])
+
+    # Batch check which children are on homo path (single query)
+    child_ids = [row['node_id'] for row in children_rows]
+    path_check = check_nodes_on_homo_path(child_ids)
+
+    # Get child counts in a single query
+    child_counts = get_batch_child_counts(child_ids)
+
     kids = []
-    for cid in parent_children.get(node_id, []):
-        d = state.get(cid, {})
+    for row in children_rows:
+        cid = row['node_id']
         kids.append({
             "id": cid,
-            "name": (d.get("name") or "").strip(),
-            "child_count": len(parent_children.get(cid, [])),
-            "on_path": cid in homo_path_ids,
+            "name": (row['node_name'] or "").strip(),
+            "child_count": child_counts.get(cid, 0),
+            "on_path": path_check.get(cid, False),
         })
+
     # Sort: nodes with children first, then leaves; within each group, alphabetically
     kids.sort(key=lambda x: (x["child_count"] == 0, x["name"].lower()))
     return jsonify(kids)
 
 @app.route("/api/breadcrumb/<node_id>")
 def api_breadcrumb(node_id):
-    crumbs, cur, seen = [], node_id, set()
-    all_ids = set(state.keys())
+    """Get breadcrumb path from root to node - fetched directly from database"""
+    path = get_path_to_root(node_id)
 
-    while cur and cur not in seen:
-        d = state.get(cur)
-        if not d:
-            break
-        seen.add(cur)
+    # Batch check which nodes are on homo path (single query)
+    path_ids = [row['node_id'] for row in path]
+    path_check = check_nodes_on_homo_path(path_ids)
+
+    crumbs = []
+    for row in path:
         crumbs.append({
-            "id": cur,
-            "name": (d.get("name") or "").strip(),
-            "on_path": cur in homo_path_ids
+            "id": row['node_id'],
+            "name": (row['node_name'] or "").strip(),
+            "on_path": path_check.get(row['node_id'], False)
         })
-        p = d.get("parent")
-        cur = str(p) if p and str(p) in all_ids else None
 
     crumbs.reverse()
     return jsonify(crumbs)
 
 @app.route("/api/focus/<node_id>")
 def api_focus(node_id):
-    """Return focus data for horizontal lineage view"""
-    if node_id not in state:
+    """Return focus data for horizontal lineage view - fetched from database"""
+    node_row = get_node_from_db(node_id)
+
+    if not node_row:
         # Fall back to root
-        all_ids = set(state.keys())
-        life_id = name_to_id.get("life")
-        if not life_id:
-            for cid, d in state.items():
-                p = d.get("parent")
-                if not p or str(p) not in all_ids:
-                    life_id = cid
-                    break
-        if not life_id:
+        root_id = get_root_node()
+        if not root_id:
             return jsonify({"error": "not found"}), 404
-        node_id = life_id
+        node_id = root_id
+        node_row = get_node_from_db(node_id)
 
     # Build breadcrumb from root to this node
-    crumbs = []
-    cur = node_id
-    seen = set()
-    all_ids = set(state.keys())
-    while cur and cur not in seen and cur in state:
-        seen.add(cur)
-        crumbs.append(cur)
-        p = state[cur].get("parent")
-        cur = str(p) if p and str(p) in all_ids else None
+    path = get_path_to_root(node_id)
+    crumbs = [row['node_id'] for row in path]
     crumbs.reverse()
 
     if not crumbs:
@@ -1736,77 +2019,127 @@ def api_focus(node_id):
     # Build levels for each ancestor in the path
     levels = []
     for i, cid in enumerate(crumbs):
+        children_rows = get_children_from_db(cid)
+
+        # Batch operations for all children at this level
+        child_ids = [child_row['node_id'] for child_row in children_rows]
+        child_counts = get_batch_child_counts(child_ids)
+        path_check = check_nodes_on_homo_path(child_ids)
+
         children = []
-        for child_id in parent_children.get(cid, []):
-            child_data = state.get(child_id, {})
+        for child_row in children_rows:
+            child_id = child_row['node_id']
             children.append({
                 "id": child_id,
-                "name": (child_data.get("name") or "").strip(),
-                "extant": child_data.get("extant"),
-                "child_count": len(parent_children.get(child_id, [])),
-                "on_path": child_id in homo_path_ids,
+                "name": (child_row['node_name'] or "").strip(),
+                "child_count": child_counts.get(child_id, 0),
+                "on_path": path_check.get(child_id, False),
                 "selected": (i + 1 < len(crumbs) and crumbs[i + 1] == child_id)
             })
         # Sort: nodes with children first, then leaves
         children.sort(key=lambda x: (x["child_count"] == 0, x["name"].lower()))
 
+        parent_row = get_node_from_db(cid)
         levels.append({
-            "parent": node_dict(cid),
+            "parent": node_dict(parent_row),
             "expanded_child_id": crumbs[i + 1] if i + 1 < len(crumbs) else None,
             "nodes": children
         })
 
+    root_row = get_node_from_db(crumbs[0])
     return jsonify({
-        "root": node_dict(crumbs[0]),
-        "focus": node_dict(node_id),
-        "breadcrumb": [node_dict(cid) for cid in crumbs],
+        "root": node_dict(root_row),
+        "focus": node_dict(node_row),
+        "breadcrumb": [node_dict(get_node_from_db(cid)) for cid in crumbs],
         "levels": levels
     })
 
 @app.route("/api/search")
 def api_search():
+    """Search nodes - queries database directly"""
     q = request.args.get("q", "").strip().lower()
     if len(q) < 2:
         return jsonify([])
 
-    results = []
-    for cid, d in state.items():
-        n = (d.get("name") or "").lower()
-        if q in n:
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
+
+        # Search using LIKE with limit
+        cursor.execute("""
+            SELECT node_id, node_name
+            FROM clades
+            WHERE LOWER(node_name) LIKE %s
+            ORDER BY node_name
+            LIMIT 50
+        """, (f'%{q}%',))
+
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Batch operations for all search results
+        result_ids = [row['node_id'] for row in rows]
+        child_counts = get_batch_child_counts(result_ids)
+        path_check = check_nodes_on_homo_path(result_ids)
+
+        results = []
+        for row in rows:
+            cid = row['node_id']
             results.append({
                 "id": cid,
-                "name": (d.get("name") or "").strip(),
-                "child_count": len(parent_children.get(cid, [])),
-                "on_path": cid in homo_path_ids,
+                "name": (row['node_name'] or "").strip(),
+                "child_count": child_counts.get(cid, 0),
+                "on_path": path_check.get(cid, False),
             })
-            if len(results) >= 50:
-                break
 
-    results.sort(key=lambda x: (x["name"].lower().index(q), x["name"].lower()))
-    return jsonify(results)
+        # Sort by position of search term, then alphabetically
+        results.sort(key=lambda x: (x["name"].lower().find(q), x["name"].lower()))
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return jsonify([])
 
 @app.route("/api/export")
 def api_export():
-    all_ids = set(state.keys())
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["node_id", "node_name", "parent_id", "description", "era"])
+    """Export all nodes to CSV - fetched from database"""
+    try:
+        conn = get_db(readonly=True)
+        cursor = conn.cursor()
 
-    for cid, d in state.items():
-        pid = str(d.get("parent", "") or "")
-        w.writerow([
-            cid,
-            (d.get("name") or "").strip(),
-            pid,
-            (d.get("description") or "").strip(),
-            (d.get("era") or "").strip()
-        ])
+        cursor.execute("""
+            SELECT c1.node_id, c1.node_name, c1.parent_id, c2.node_name as parent_name,
+                   c1.description
+            FROM clades c1
+            LEFT JOIN clades c2 ON c1.parent_id = c2.node_id
+            ORDER BY c1.node_name
+        """)
 
-    return Response(
-        buf.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=phylex_export.csv"}
-    )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["node_id", "node_name", "parent_id", "parent_name", "description"])
+
+        for row in rows:
+            w.writerow([
+                row['node_id'],
+                (row['node_name'] or "").strip(),
+                row['parent_id'] or "",
+                (row['parent_name'] or "").strip(),
+                (row['description'] or "").strip()
+            ])
+
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=phylex_export.csv"}
+        )
+    except Exception as e:
+        logger.error(f"Export error: {e}")
+        return jsonify({"error": "Export failed"}), 500
 
 @app.route("/api/move", methods=["POST"])
 @require_auth('editor')
@@ -1825,17 +2158,21 @@ def api_move():
     if not validate_node_id(new_parent_id):
         return jsonify({"error": "Invalid parent_id format"}), 400
 
-    if node_id not in state:
+    # Check nodes exist in database
+    node_row = get_node_from_db(node_id)
+    if not node_row:
         return jsonify({"error": "Node not found"}), 404
-    if new_parent_id not in state:
+
+    new_parent_row = get_node_from_db(new_parent_id)
+    if not new_parent_row:
         return jsonify({"error": "Parent not found"}), 404
+
     if node_id == new_parent_id:
         return jsonify({"error": "Cannot move a node to itself"}), 400
 
-    d = state[node_id]
-    old_parent = str(d.get("parent", "") or "")
-    node_name = (d.get("name") or "").strip()
-    new_parent_name = (state[new_parent_id].get("name") or "").strip()
+    old_parent = node_row['parent_id'] or ""
+    node_name = (node_row['node_name'] or "").strip()
+    new_parent_name = (new_parent_row['node_name'] or "").strip()
 
     try:
         # Update in PostgreSQL
@@ -1852,16 +2189,8 @@ def api_move():
         error_msg = str(e)
         return jsonify({"error": f"{sanitize_error(error_msg)}\n\nDetails: {error_msg}"}), 500
 
-    # Update in-memory state
-    if old_parent in parent_children:
-        try:
-            parent_children[old_parent].remove(node_id)
-        except ValueError:
-            pass
-
-    state[node_id]["parent"] = new_parent_id
-    parent_children[new_parent_id].append(node_id)
-    _rebuild_homo_path()
+    # Invalidate Homo sapiens path cache since tree structure changed
+    invalidate_homo_path_cache()
 
     return jsonify({
         "node_id": node_id,
@@ -1891,16 +2220,12 @@ def api_add_child():
     if len(description) > 5000:
         return jsonify({"error": "Description too long (max 5000 characters)"}), 400
 
-    if parent_id not in state:
+    # Check parent exists in database
+    parent_row = get_node_from_db(parent_id)
+    if not parent_row:
         return jsonify({"error": "Parent not found"}), 404
 
     new_id = _generate_node_id()
-    new_data = {
-        "name": child_name,
-        "parent": parent_id,
-        "era": None,
-        "description": description,
-    }
 
     try:
         # Insert into PostgreSQL
@@ -1916,22 +2241,24 @@ def api_add_child():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Update in-memory state
-    state[new_id] = new_data
-    name_to_id[child_name.lower()] = new_id
-    parent_children[parent_id].append(new_id)
-    _rebuild_homo_path()
+    # Invalidate Homo sapiens path cache since tree structure changed
+    invalidate_homo_path_cache()
 
-    parent_name = state.get(parent_id, {}).get('name', 'Unknown')
+    # Refresh stats (added a new node)
+    refresh_stats_cache()
+
+    parent_name = parent_row['node_name']
     audit_log('ADD_CHILD', f'Name={child_name}, Parent={parent_name}[{parent_id[:8]}...], NewID={new_id[:8]}...', status='SUCCESS')
 
-    return jsonify(node_dict(new_id))
+    new_node_row = get_node_from_db(new_id)
+    return jsonify(node_dict(new_node_row))
 
 @app.route("/api/edit/<node_id>", methods=["POST"])
 @require_auth('editor')
 def api_edit(node_id):
     """Edit node description"""
-    if node_id not in state:
+    node_row = get_node_from_db(node_id)
+    if not node_row:
         return jsonify({"error": "not found"}), 404
 
     data = request.get_json() or {}
@@ -1946,22 +2273,23 @@ def api_edit(node_id):
         cursor.close()
         conn.close()
 
-        node_name = state.get(node_id, {}).get('name', 'Unknown')
+        node_name = node_row['node_name']
         audit_log('EDIT_DESCRIPTION', f'Node={node_name}[{node_id[:8]}...], Length={len(description)} chars', status='SUCCESS')
     except Exception as e:
         audit_log('EDIT_DESCRIPTION', f'Node={node_id[:8]}... ERROR={str(e)}', status='ERROR')
         return jsonify({"error": str(e)}), 500
 
-    # Update in-memory state
-    state[node_id]["description"] = description
+    # No in-memory state to update - data is fetched fresh from database
 
-    return jsonify(node_dict(node_id))
+    updated_node = get_node_from_db(node_id)
+    return jsonify(node_dict(updated_node))
 
 @app.route("/api/rename/<node_id>", methods=["POST"])
 @require_auth('editor')
 def api_rename(node_id):
     """Rename a node"""
-    if node_id not in state:
+    node_row = get_node_from_db(node_id)
+    if not node_row:
         return jsonify({"error": "not found"}), 404
 
     data = request.get_json() or {}
@@ -1970,7 +2298,7 @@ def api_rename(node_id):
     if not new_name:
         return jsonify({"error": "name is required"}), 400
 
-    old_name = (state[node_id].get("name") or "").strip()
+    old_name = (node_row['node_name'] or "").strip()
 
     try:
         # Update in PostgreSQL
@@ -1983,13 +2311,7 @@ def api_rename(node_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Update in-memory state
-    state[node_id]["name"] = new_name
-
-    # Update name index
-    if old_name:
-        name_to_id.pop(old_name.lower(), None)
-    name_to_id[new_name.lower()] = node_id
+    # No in-memory state to update - data is fetched fresh from database
 
     audit_log('RENAME_NODE', f'ID={node_id[:8]}..., OldName={old_name}, NewName={new_name}', status='SUCCESS')
 
@@ -2019,7 +2341,10 @@ def api_backup():
             SELECT * FROM clades
         """).format(sql.Identifier(backup_name)))
 
-        count = len(state)
+        # Get count from database instead of memory
+        cursor.execute("SELECT COUNT(*) as count FROM clades")
+        count_row = cursor.fetchone()
+        count = count_row['count'] if count_row else 0
 
         conn.commit()
         cursor.close()
@@ -2122,8 +2447,7 @@ def api_restore():
         cursor.close()
         conn.close()
 
-        # Reload in-memory state
-        load_db()
+        # No in-memory state to reload - data is fetched fresh from database on each request
 
         audit_log('RESTORE_DATABASE', f'File={file.filename}, Rows={rows_imported:,}, Backup={backup_name}', status='SUCCESS')
 
@@ -2141,18 +2465,20 @@ def api_restore():
 @require_auth('editor')
 def api_delete(node_id):
     """Delete a node from the database"""
-    if node_id not in state:
+    node_row = get_node_from_db(node_id)
+    if not node_row:
         return jsonify({"error": "not found"}), 404
 
     # Check if node has children
-    if parent_children.get(node_id):
+    child_count = count_children_from_db(node_id)
+    if child_count > 0:
         return jsonify({"error": "Cannot delete a node that has children"}), 400
 
-    parent_id = str(state[node_id].get("parent", "") or "")
+    parent_id = node_row['parent_id'] or ""
     if not parent_id:
         return jsonify({"error": "Cannot delete root node"}), 400
 
-    name = (state[node_id].get("name") or "").strip()
+    name = (node_row['node_name'] or "").strip()
 
     try:
         # Delete from PostgreSQL
@@ -2166,17 +2492,11 @@ def api_delete(node_id):
         audit_log('DELETE_NODE', f'Name={name}, ID={node_id[:8]}... ERROR={str(e)}', status='ERROR')
         return jsonify({"error": str(e)}), 500
 
-    # Update in-memory state
-    if parent_id in parent_children:
-        try:
-            parent_children[parent_id].remove(node_id)
-        except ValueError:
-            pass
+    # Invalidate Homo sapiens path cache since tree structure changed
+    invalidate_homo_path_cache()
 
-    name_to_id.pop(name.lower(), None)
-    parent_children.pop(node_id, None)
-    state.pop(node_id, None)
-    _rebuild_homo_path()
+    # Refresh stats (deleted a node)
+    refresh_stats_cache()
 
     audit_log('DELETE_NODE', f'Name={name}, ID={node_id[:8]}...', status='SUCCESS')
 
@@ -2209,23 +2529,24 @@ def add_security_headers(resp):
     return resp
 
 # ============================================================================
-# STARTUP: Load database and users when module is imported (for Gunicorn)
+# STARTUP: Load users and initialize caches when module is imported (for Gunicorn)
 # ============================================================================
 print("\n" + "="*60)
-print("Phylogeny Explorer - revised data")
+print("Phylogeny Explorer - Optimized Database Mode")
 print("="*60)
-
-# Load phylogenetic tree from database
-load_db()
 
 # Load users from database
 USERS = load_users_from_db()
 
+# Initialize stats cache at startup
+initialize_stats_cache()
+
 logger.info("="*60)
-logger.info("MODULE LOADED - DATABASE READY")
-logger.info(f"Total nodes loaded: {len(state):,}")
-logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")
+logger.info("MODULE LOADED - DATABASE CONNECTION READY")
+logger.info("Database mode: OPTIMIZED (cached stats, real-time data)")
 logger.info(f"Users loaded: {len(USERS)}")
+logger.info(f"Total nodes: {_stats_cache['total_nodes']:,}")
+logger.info(f"Homo sapiens path: {_stats_cache['homo_path_nodes']} nodes")
 logger.info("="*60)
 
 # ============================================================================
@@ -2240,20 +2561,22 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("PHYLEX TREE BROWSER [PostgreSQL]")
+    print("PHYLEX TREE BROWSER [PostgreSQL - Real-Time Mode]")
     print("="*60)
-
-    load_db()
 
     # Load users from database
     USERS = load_users_from_db()
 
+    # Initialize stats cache
+    initialize_stats_cache()
+
     logger.info("="*60)
     logger.info("SERVER STARTUP")
     logger.info(f"Host: {args.host}:{args.port}")
-    logger.info(f"Total nodes loaded: {len(state):,}")
-    logger.info(f"Path to Homo sapiens: {len(homo_path_ids)} nodes")
+    logger.info("Database mode: OPTIMIZED (cached stats, real-time data)")
     logger.info(f"Users loaded: {len(USERS)}")
+    logger.info(f"Total nodes: {_stats_cache['total_nodes']:,}")
+    logger.info(f"Homo sapiens path: {_stats_cache['homo_path_nodes']} nodes")
     logger.info(f"Session timeout: {app.config['PERMANENT_SESSION_LIFETIME']} seconds")
     logger.info(f"Audit logging: ENABLED")
     logger.info("="*60)

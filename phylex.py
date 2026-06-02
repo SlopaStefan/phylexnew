@@ -268,8 +268,7 @@ def load_db():
 
         print("Loading clades into RAM...", flush=True)
         cursor.execute("""
-            SELECT node_id, node_name, parent_id, description, traits,
-                   era, extant
+            SELECT node_id, node_name, parent_id, description, era
             FROM clades
         """)
 
@@ -284,9 +283,7 @@ def load_db():
                 'name': row['node_name'],
                 'parent': row['parent_id'],
                 'description': row['description'],
-                'traits': row['traits'],
-                'era': row['era'],
-                'extant': row['extant']
+                'era': row['era']
             }
 
             # Build name index
@@ -369,18 +366,12 @@ def node_dict(cid):
     d = state.get(cid, {})
     pid = str(d.get("parent", "") or "")
 
-    # Format traits for display
-    traits = (d.get("traits") or "").strip()
-
     return {
         "id": cid,
         "name": (d.get("name") or "").strip(),
         "description": (d.get("description") or "").strip(),
-        "traits": traits,
         "era": (d.get("era") or "").strip(),
-        "extant": d.get("extant"),
         "parent_id": pid,
-        "parent_name": (state.get(pid, {}).get("name") or "").strip(),
         "child_count": len(parent_children.get(cid, [])),
         "on_path": cid in homo_path_ids,
     }
@@ -677,6 +668,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
 </div>
 
 <script>
+console.log('=== PHYLEX SCRIPT STARTING ===');
 let currentId = null;
 let currentNode = null;
 let currentFocus = null;
@@ -686,18 +678,23 @@ let viewMode = 'vertical'; // 'vertical' or 'horizontal'
 // ?? Boot ?????????????????????????????????????????????????????????????????????
 
 async function boot() {
+  console.log('Boot starting...');
   showMainLoading();
   try {
+    console.log('Fetching session, stats, and root...');
     // Check session and load stats and root in parallel
     const [session, stats, root] = await Promise.all([
       get('/api/session'),
       get('/api/stats'),
       get('/api/root')
     ]);
+    console.log('API responses received:', {session, stats, root});
     updateAuthUI(session);
     updateStats(stats);
     await navigate(root.id);
+    console.log('Boot completed successfully');
   } catch(e) {
+    console.error('Boot error:', e);
     showError('Could not load root node: ' + e.message);
   }
 }
@@ -747,7 +744,8 @@ function renderSidebar(crumbs) {
   reversedCrumbs.forEach((c, i) => {
     const active  = i === 0 ? 'active' : '';
     const onPath  = c.on_path ? 'on-path' : '';
-    html += `<div class="crumb ${active} ${onPath}" onclick="navigate('${c.id}')">${esc(c.name)}</div>`;
+    const safeName = esc(c.name).replace(/\\n/g, ' ');
+    html += `<div class="crumb ${active} ${onPath}" onclick="navigate('${c.id}')">${safeName}</div>`;
   });
   el.innerHTML = html;
 }
@@ -913,8 +911,8 @@ const GEOLOGIC_UNITS = [
   {name:'Meghalayan', start:0.0042, end:0},
 ];
 
-function renderEraTimeline(eraValue, extant) {
-  const intervals = getActiveIntervals(eraValue, extant);
+function renderEraTimeline(eraValue) {
+  const intervals = getActiveIntervals(eraValue);
   const matchedNames = new Set(intervals.map(i => i.name));
   const segments = GEOLOGIC_TIMELINE.map(period => {
     const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * 100;
@@ -955,7 +953,7 @@ function intervalOverlaps(period, interval) {
   return interval.start > period.end && interval.end < period.start;
 }
 
-function getActiveIntervals(eraValue, extant) {
+function getActiveIntervals(eraValue) {
   if (!eraValue) return [];
   const text = normalizeEraText(eraValue);
   let matches = [];
@@ -967,15 +965,10 @@ function getActiveIntervals(eraValue, extant) {
   });
   matches = removeDuplicateIntervals(matches);
   matches = preferSpecificIntervals(matches);
-  if (matches.length >= 2 && /\bto\b|-|\u2013|\u2014|\bthrough\b|\buntil\b|\bpresent\b/.test(text)) {
+  if (matches.length >= 2 && /\bto\b|-|\u2013|\u2014|\bthrough\b|\buntil\b/.test(text)) {
     const oldest = Math.max(...matches.map(m => m.start));
-    const youngest = text.includes('present') || text.includes('living') || extant === true
-      ? 0
-      : Math.min(...matches.map(m => m.end));
+    const youngest = Math.min(...matches.map(m => m.end));
     return [{name: matches.map(m => m.name).join(' to '), start: oldest, end: youngest}];
-  }
-  if (extant === true && /\bpresent\b|\brecent\b|\bliving\b|\bextant\b/.test(text)) {
-    matches.push({name:'Present', start:0.0117, end:0});
   }
   return matches;
 }
@@ -984,7 +977,7 @@ function normalizeEraText(value) {
   return String(value)
     .toLowerCase()
     .replace(/[()_,.;:/]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\\s+/g, ' ')
     .trim();
 }
 
@@ -1012,24 +1005,24 @@ function preferSpecificIntervals(intervals) {
 }
 
 function escapeRegexChars(value) {
-  const specials = new Set(['.','*','+','?','^','$','{','}','(',')',']','[','|','\\']);
+  const specials = new Set(['.','*','+','?','^','$','{','}','(',')',']','[','|','\\\\']);
   let out = '';
-  for (const ch of String(value)) out += specials.has(ch) ? '\\' + ch : ch;
+  for (const ch of String(value)) out += specials.has(ch) ? '\\\\' + ch : ch;
   return out;
 }
 
 function containsEraTerm(text, term) {
   const normalizedTerm = normalizeEraText(term);
-  const escaped = normalizedTerm.split(' ').map(escapeRegexChars).join('\\s+');
+  const escaped = normalizedTerm.split(' ').map(escapeRegexChars).join('\\\\s+');
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(text);
 }
 
 function formatMa(value) {
   if (value === 0) return '0';
-  if (value < 0.01) return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-  if (value < 0.1)  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
-  if (value < 10)   return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-  return value.toFixed(1).replace(/0+$/, '').replace(/\.$/, '');
+  if (value < 0.01) return value.toFixed(4).replace(/0+$/, '').replace(/\\.$/,  '');
+  if (value < 0.1)  return value.toFixed(3).replace(/0+$/, '').replace(/\\.$/,  '');
+  if (value < 10)   return value.toFixed(2).replace(/0+$/, '').replace(/\\.$/,  '');
+  return value.toFixed(1).replace(/0+$/, '').replace(/\\.$/,  '');
 }
 
 function renderMain(node, children) {
@@ -1042,38 +1035,26 @@ function renderMain(node, children) {
 
   let badges = '';
   if (onPath)                badges += '<span class="badge badge-path">&#10003;&nbsp;Path to Homo sapiens</span>';
-  if (node.extant === true)  badges += '<span class="badge badge-extant">Living</span>';
-  if (node.extant === false) badges += '<span class="badge badge-extinct">Extinct</span>';
 
-  const descText = node.description ? esc(node.description) : 'No description';
+  const descText = node.description ? esc(node.description).replace(/\\n/g, '<br>') : 'No description';
   const descClass = node.description ? 'node-desc' : 'node-desc no-description';
-  const eraText = node.era ? esc(node.era) : 'Unknown era';
+  const eraText = node.era ? esc(node.era).replace(/\\n/g, ' ') : 'Unknown era';
   const eraLabelClass = node.era ? 'era-label' : 'era-label unknown';
   const desc = `
     <div class="description-panel">
       <div class="${eraLabelClass}" title="Era: ${eraText}">Era: ${eraText}</div>
       <div class="${descClass}"${node.description ? '' : ' style="color:#666"'}>${descText}</div>
-      ${renderEraTimeline(node.era, node.extant)}
+      ${renderEraTimeline(node.era)}
     </div>`;
 
-  const traits = node.traits 
-    ? `<div style="margin-top:16px">
-         <div style="color:#667eea;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
-           &#128220; Node Traits
-         </div>
-         <div class="node-desc" style="background:#0f3460;padding:12px;border-radius:6px;border-left:3px solid #667eea">
-           ${esc(node.traits).replace(/\\n\\n/g, '<br><br>')}
-         </div>
-       </div>` 
-    : '';
-
+  const safeName = esc(node.name).replace(/\\n/g, ' ');
+  const safeId = esc(node.id).replace(/\\n/g, '');
   let html = `
     <div class="${hdrCls}">
-      <div class="${titleCls}">${esc(node.name)}</div>
+      <div class="${titleCls}">${safeName}</div>
       ${badges ? `<div class="badges">${badges}</div>` : ''}
-      <div class="node-id">${esc(node.id)}</div>
+      <div class="node-id">${safeId}</div>
       ${desc}
-      ${traits}
       <div class="node-actions">
         <button class="tb-btn btn-edit" onclick="renameNode()">Rename Node</button>
         <button class="tb-btn btn-edit" onclick="editDescription()">Edit Description</button>
@@ -1087,10 +1068,10 @@ function renderMain(node, children) {
              <div class="children-grid">`;
     children.forEach(c => {
       const cls  = c.on_path ? 'child-card on-path' : 'child-card';
-      const ext  = c.extant === false ? ' <span style="color:#e57373;font-size:11px">&#8224;</span>' : '';
+      const childName = esc(c.name).replace(/\\n/g, ' ');
       html += `
         <div class="${cls}" onclick="navigate('${c.id}')">
-          <div class="child-name">${esc(c.name)}${ext}</div>
+          <div class="child-name">${childName}</div>
           <div class="child-meta">${c.child_count} children</div>
         </div>`;
     });
@@ -1122,11 +1103,14 @@ async function doSearch(q) {
     if (!results.length) {
       dd.innerHTML = '<div class="sd-item" style="color:#666">No results</div>';
     } else {
-      dd.innerHTML = results.map(r => `
+      dd.innerHTML = results.map(r => {
+        const safeName = esc(r.name).replace(/\\n/g, ' ');
+        return `
         <div class="sd-item ${r.on_path ? 'on-path' : ''}" onclick="selectResult('${r.id}')">
-          ${esc(r.name)}
+          ${safeName}
           <div class="sd-meta">${r.child_count} children</div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
     dd.classList.add('open');
   } catch(e) {}
@@ -1562,7 +1546,8 @@ function renderFocusGraph(focus) {
     div.className = classes;
     div.style.left = p.x + 'px';
     div.style.top = p.y + 'px';
-    div.innerHTML = `<div class="ln-name">${esc(d.name)}</div><div class="ln-meta">${d.child_count} children</div>`;
+    const nodeName = esc(d.name).replace(/\\n/g, ' ');
+    div.innerHTML = `<div class="ln-name">${nodeName}</div><div class="ln-meta">${d.child_count} children</div>`;
     div.onclick = () => navigate(id);
     nodesLayer.appendChild(div);
   });
@@ -1580,6 +1565,7 @@ function findNodeInFocus(focus, id) {
 }
 
 // Boot
+console.log('Script loaded, calling boot()...');
 boot();
 </script>
 </body>
@@ -1687,7 +1673,6 @@ def api_children(node_id):
         kids.append({
             "id": cid,
             "name": (d.get("name") or "").strip(),
-            "extant": d.get("extant"),
             "child_count": len(parent_children.get(cid, [])),
             "on_path": cid in homo_path_ids,
         })
@@ -1805,18 +1790,16 @@ def api_export():
     all_ids = set(state.keys())
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["node_id", "node_name", "parent_id", "parent_name", "description", "traits"])
+    w.writerow(["node_id", "node_name", "parent_id", "description", "era"])
 
     for cid, d in state.items():
         pid = str(d.get("parent", "") or "")
-        pname = (state.get(pid, {}).get("name") or "").strip() if pid in all_ids else ""
         w.writerow([
             cid,
             (d.get("name") or "").strip(),
             pid,
-            pname,
             (d.get("description") or "").strip(),
-            (d.get("traits") or "").strip()
+            (d.get("era") or "").strip()
         ])
 
     return Response(
@@ -1916,9 +1899,7 @@ def api_add_child():
         "name": child_name,
         "parent": parent_id,
         "era": None,
-        "extant": None,
         "description": description,
-        "traits": None,
     }
 
     try:
@@ -1926,9 +1907,9 @@ def api_add_child():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO clades (node_id, node_name, parent_id, description, traits, era, extant)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (new_id, child_name, parent_id, description, None, None, None))
+            INSERT INTO clades (node_id, node_name, parent_id, description, era)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (new_id, child_name, parent_id, description, None))
         conn.commit()
         cursor.close()
         conn.close()
@@ -2112,7 +2093,6 @@ def api_restore():
             node_name = row['node_name'].strip()
             parent_id = row['parent_id'].strip() if row['parent_id'].strip() else None
             description = row.get('description', '').strip() or None
-            traits = row.get('traits', '').strip() or None
 
             # Security: Validate inputs
             if not validate_node_id(node_id):
@@ -2128,14 +2108,13 @@ def api_restore():
                 return jsonify({"error": f"Invalid parent_id format: {parent_id[:50]}"}), 400
 
             cursor.execute("""
-                INSERT INTO clades (node_id, node_name, parent_id, description, traits)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO clades (node_id, node_name, parent_id, description)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (node_id) DO UPDATE SET
                     node_name = EXCLUDED.node_name,
                     parent_id = EXCLUDED.parent_id,
-                    description = EXCLUDED.description,
-                    traits = EXCLUDED.traits
-            """, (node_id, node_name, parent_id, description, traits))
+                    description = EXCLUDED.description
+            """, (node_id, node_name, parent_id, description))
 
             rows_imported += 1
 

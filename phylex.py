@@ -110,9 +110,6 @@ def audit_log(action, details=None, user=None, status='SUCCESS'):
     else:
         logger.info(log_message)
 
-# Plaintext password verification (passwords stored in clear text in database)
-logger.info("Using plaintext password verification")
-
 def verify_password(password, stored_password):
     """Verify password against plaintext stored password"""
     return password == stored_password
@@ -558,6 +555,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
   .description-panel { padding:14px; }
   .description-panel .node-desc { padding-right:0; padding-top:34px; }
   .era-label { left:12px; right:auto; max-width:calc(100% - 24px); }
+  .era-timeline { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .era-bar-row { height:18px; }
   .era-label-row { height:40px; }
   .badges { flex-wrap:wrap; gap:6px; }
@@ -567,7 +565,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
   .node-actions { display:none; }
 
   .children-title { font-size:15px; margin-bottom:10px; margin-top:16px; }
-  .children-grid { grid-template-columns:1fr; gap:10px; padding-bottom:20px; }
+  .children-grid { grid-template-columns:1fr; gap:10px; padding-bottom:80px; }
   .child-card { padding:12px; }
   .child-name { font-size:13px; }
   .child-meta { font-size:11px; }
@@ -592,6 +590,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
   .node-title { font-size:18px; }
   .node-desc { font-size:12px; max-height:150px; }
   .era-name { font-size:8px; }
+  .children-grid { padding-bottom:100px; }
 
   .line-node { width:130px; font-size:10px; padding:5px 7px; }
   .line-node .ln-name { font-size:11px; }
@@ -695,6 +694,7 @@ async function boot() {
     console.log('Boot completed successfully');
   } catch(e) {
     console.error('Boot error:', e);
+    console.error('Error stack:', e.stack);
     showError('Could not load root node: ' + e.message);
   }
 }
@@ -1044,7 +1044,7 @@ function renderMain(node, children) {
     <div class="description-panel">
       <div class="${eraLabelClass}" title="Era: ${eraText}">Era: ${eraText}</div>
       <div class="${descClass}"${node.description ? '' : ' style="color:#666"'}>${descText}</div>
-      ${renderEraTimeline(node.era)}
+      ${renderEraTimeline(node.era, node.extant)}
     </div>`;
 
   const safeName = esc(node.name).replace(/\\n/g, ' ');

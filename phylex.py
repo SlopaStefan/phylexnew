@@ -269,7 +269,7 @@ def load_db():
         print("Loading clades into RAM...", flush=True)
         cursor.execute("""
             SELECT node_id, node_name, parent_id, description, traits,
-                   other_names, extant, era
+                   era, extant
             FROM clades
         """)
 
@@ -285,9 +285,8 @@ def load_db():
                 'parent': row['parent_id'],
                 'description': row['description'],
                 'traits': row['traits'],
-                'otherNames': row['other_names'],
-                'extant': row['extant'],
-                'era': row.get('era')
+                'era': row['era'],
+                'extant': row['extant']
             }
 
             # Build name index
@@ -1916,7 +1915,7 @@ def api_add_child():
     new_data = {
         "name": child_name,
         "parent": parent_id,
-        "otherNames": None,
+        "era": None,
         "extant": None,
         "description": description,
         "traits": None,
@@ -1927,7 +1926,7 @@ def api_add_child():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO clades (node_id, node_name, parent_id, description, traits, other_names, extant)
+            INSERT INTO clades (node_id, node_name, parent_id, description, traits, era, extant)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (new_id, child_name, parent_id, description, None, None, None))
         conn.commit()

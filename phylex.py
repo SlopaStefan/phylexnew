@@ -269,7 +269,7 @@ def load_db():
         print("Loading clades into RAM...", flush=True)
         cursor.execute("""
             SELECT node_id, node_name, parent_id, description, traits,
-                   other_names, extant
+                   other_names, extant, era
             FROM clades
         """)
 
@@ -286,7 +286,8 @@ def load_db():
                 'description': row['description'],
                 'traits': row['traits'],
                 'otherNames': row['other_names'],
-                'extant': row['extant']
+                'extant': row['extant'],
+                'era': row.get('era')
             }
 
             # Build name index
@@ -377,6 +378,7 @@ def node_dict(cid):
         "name": (d.get("name") or "").strip(),
         "description": (d.get("description") or "").strip(),
         "traits": traits,
+        "era": (d.get("era") or "").strip(),
         "extant": d.get("extant"),
         "parent_id": pid,
         "parent_name": (state.get(pid, {}).get("name") or "").strip(),
@@ -476,6 +478,24 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .badge-extant { background:#48bb7833; color:#48bb78; }
 .badge-extinct { background:#f5656533; color:#f56565; }
 .node-desc { font-size:14px; line-height:1.6; color:#c9d1d9; margin-top:12px; }
+.description-panel { position:relative; margin-top:12px; padding:16px; background:#0f2942; border:1px solid #1d3a5f; border-radius:8px; }
+.description-panel .node-desc { margin-top:0; padding-right:170px; }
+.era-label { position:absolute; top:12px; right:12px; max-width:160px; padding:5px 9px; border-radius:999px; background:#1d3a5f; color:#e6edf3; border:1px solid #2d4663; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.era-label.unknown { color:#8b949e; font-weight:600; }
+.era-timeline { margin-top:16px; }
+.era-timeline-title { display:flex; justify-content:space-between; gap:10px; font-size:11px; color:#8b949e; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:6px; }
+.era-timeline-title span { text-transform:none; letter-spacing:0; color:#c9d1d9; font-weight:500; text-align:right; }
+.era-bar-row { display:flex; height:22px; width:100%; overflow:hidden; border-radius:6px; border:1px solid #2d4663; background:#0a1929; }
+.era-segment { position:relative; height:100%; background:#243b55; border-right:1px solid rgba(230,237,243,0.2); min-width:1px; overflow:hidden; }
+.era-segment:last-child { border-right:none; }
+.era-segment.active { background:#2d4663; }
+.era-highlight { position:absolute; top:0; bottom:0; background:#e53e3e; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.35); }
+.era-label-row { display:flex; width:100%; height:46px; margin-top:4px; }
+.era-name { position:relative; flex-shrink:0; min-width:1px; color:#8b949e; font-size:9px; border-left:1px solid rgba(139,148,158,0.18); }
+.era-name:last-child { border-right:1px solid rgba(139,148,158,0.18); }
+.era-name span { position:absolute; top:4px; left:50%; transform:translateX(-50%) rotate(-35deg); transform-origin:top center; white-space:nowrap; pointer-events:none; }
+.era-name.active { color:#fc8181; font-weight:700; }
+.era-scale { display:flex; justify-content:space-between; margin-top:2px; font-size:10px; color:#8b949e; }
 .children-title { font-size:16px; font-weight:600; color:#8b949e; margin-bottom:12px; }
 .children-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
 .child-card { background:#13294b; border:1px solid #1d3a5f; border-radius:6px; padding:14px; cursor:pointer; transition:all 0.2s; }
@@ -545,6 +565,11 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
     overflow-y:auto;
     margin-bottom:12px;
   }
+  .description-panel { padding:14px; }
+  .description-panel .node-desc { padding-right:0; padding-top:34px; }
+  .era-label { left:12px; right:auto; max-width:calc(100% - 24px); }
+  .era-bar-row { height:18px; }
+  .era-label-row { height:40px; }
   .badges { flex-wrap:wrap; gap:6px; }
   .badge { font-size:10px; padding:3px 8px; }
 
@@ -576,6 +601,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
   .node-header { padding:12px; }
   .node-title { font-size:18px; }
   .node-desc { font-size:12px; max-height:150px; }
+  .era-name { font-size:8px; }
 
   .line-node { width:130px; font-size:10px; padding:5px 7px; }
   .line-node .ln-name { font-size:11px; }
@@ -727,6 +753,286 @@ function renderSidebar(crumbs) {
   el.innerHTML = html;
 }
 
+// ?? Geologic Timeline ???????????????????????????????????????????????????????????????
+
+const GEOLOGIC_TIMELINE = [
+  {name:'Cambrian', start:538.8, end:486.85, aliases:['Cambrian Period']},
+  {name:'Ordovician', start:486.85, end:443.8, aliases:['Ordovician Period']},
+  {name:'Silurian', start:443.8, end:419.2, aliases:['Silurian Period']},
+  {name:'Devonian', start:419.2, end:358.86, aliases:['Devonian Period']},
+  {name:'Carboniferous', start:358.86, end:298.9, aliases:['Carboniferous Period']},
+  {name:'Permian', start:298.9, end:251.902, aliases:['Permian Period']},
+  {name:'Triassic', start:251.902, end:201.3, aliases:['Triassic Period']},
+  {name:'Jurassic', start:201.3, end:145.0, aliases:['Jurassic Period']},
+  {name:'Cretaceous', start:145.0, end:66.0, aliases:['Cretaceous Period']},
+  {name:'Paleogene', start:66.0, end:23.03, aliases:['Palaeogene', 'Paleogene Period', 'Palaeogene Period']},
+  {name:'Neogene', start:23.03, end:2.58, aliases:['Neogene Period']},
+  {name:'Pleistocene', start:2.58, end:0.0117, aliases:['Pleistocene Epoch']},
+  {name:'Holocene', start:0.0117, end:0, aliases:['Present', 'Recent', 'Holocene Epoch']},
+];
+const GEOLOGIC_TOTAL_MA = GEOLOGIC_TIMELINE[0].start - GEOLOGIC_TIMELINE[GEOLOGIC_TIMELINE.length - 1].end;
+
+const GEOLOGIC_UNITS = [
+  {name:'Paleozoic', start:538.8, end:251.902, aliases:['Palaeozoic']},
+  {name:'Mesozoic', start:251.902, end:66.0},
+  {name:'Cenozoic', start:66.0, end:0, aliases:['Caenozoic']},
+  {name:'Quaternary', start:2.58, end:0},
+  {name:'Tertiary', start:66.0, end:2.58},
+  ...GEOLOGIC_TIMELINE,
+  {name:'Terreneuvian', start:538.8, end:521.0},
+  {name:'Fortunian', start:538.8, end:529.0},
+  {name:'Cambrian Stage 2', start:529.0, end:521.0, aliases:['Stage 2']},
+  {name:'Cambrian Series 2', start:521.0, end:509.0, aliases:['Series 2']},
+  {name:'Cambrian Stage 3', start:521.0, end:514.0, aliases:['Stage 3']},
+  {name:'Cambrian Stage 4', start:514.0, end:509.0, aliases:['Stage 4']},
+  {name:'Miaolingian', start:509.0, end:497.0},
+  {name:'Wuliuan', start:509.0, end:504.5},
+  {name:'Drumian', start:504.5, end:500.5},
+  {name:'Guzhangian', start:500.5, end:497.0},
+  {name:'Furongian', start:497.0, end:486.85},
+  {name:'Paibian', start:497.0, end:494.2},
+  {name:'Jiangshanian', start:494.2, end:491.0},
+  {name:'Cambrian Stage 10', start:491.0, end:486.85, aliases:['Stage 10']},
+  {name:'Early Ordovician', start:486.85, end:470.0, aliases:['Lower Ordovician']},
+  {name:'Middle Ordovician', start:470.0, end:458.4},
+  {name:'Late Ordovician', start:458.4, end:443.8, aliases:['Upper Ordovician']},
+  {name:'Tremadocian', start:486.85, end:477.7},
+  {name:'Floian', start:477.7, end:470.0},
+  {name:'Dapingian', start:470.0, end:467.3},
+  {name:'Darriwilian', start:467.3, end:458.4},
+  {name:'Sandbian', start:458.4, end:453.0},
+  {name:'Katian', start:453.0, end:445.2},
+  {name:'Hirnantian', start:445.2, end:443.8},
+  {name:'Llandovery', start:443.8, end:433.4},
+  {name:'Wenlock', start:433.4, end:427.4},
+  {name:'Ludlow', start:427.4, end:423.0},
+  {name:'Pridoli', start:423.0, end:419.2, aliases:['Přídolí']},
+  {name:'Rhuddanian', start:443.8, end:440.8},
+  {name:'Aeronian', start:440.8, end:438.5},
+  {name:'Telychian', start:438.5, end:433.4},
+  {name:'Sheinwoodian', start:433.4, end:430.5},
+  {name:'Homerian', start:430.5, end:427.4},
+  {name:'Gorstian', start:427.4, end:425.6},
+  {name:'Ludfordian', start:425.6, end:423.0},
+  {name:'Early Devonian', start:419.2, end:393.3, aliases:['Lower Devonian']},
+  {name:'Middle Devonian', start:393.3, end:382.7},
+  {name:'Late Devonian', start:382.7, end:358.86, aliases:['Upper Devonian']},
+  {name:'Lochkovian', start:419.2, end:410.8},
+  {name:'Pragian', start:410.8, end:407.6},
+  {name:'Emsian', start:407.6, end:393.3},
+  {name:'Eifelian', start:393.3, end:387.7},
+  {name:'Givetian', start:387.7, end:382.7},
+  {name:'Frasnian', start:382.7, end:372.2},
+  {name:'Famennian', start:372.2, end:358.86},
+  {name:'Mississippian', start:358.86, end:323.2, aliases:['Early Carboniferous', 'Lower Carboniferous']},
+  {name:'Pennsylvanian', start:323.2, end:298.9, aliases:['Late Carboniferous', 'Upper Carboniferous']},
+  {name:'Tournaisian', start:358.86, end:346.7},
+  {name:'Visean', start:346.7, end:330.9, aliases:['Viséan']},
+  {name:'Serpukhovian', start:330.9, end:323.2},
+  {name:'Bashkirian', start:323.2, end:315.2},
+  {name:'Moscovian', start:315.2, end:307.0},
+  {name:'Kasimovian', start:307.0, end:303.7},
+  {name:'Gzhelian', start:303.7, end:298.9},
+  {name:'Cisuralian', start:298.9, end:273.01, aliases:['Early Permian', 'Lower Permian']},
+  {name:'Guadalupian', start:273.01, end:259.51, aliases:['Middle Permian']},
+  {name:'Lopingian', start:259.51, end:251.902, aliases:['Late Permian', 'Upper Permian']},
+  {name:'Asselian', start:298.9, end:293.52},
+  {name:'Sakmarian', start:293.52, end:290.1},
+  {name:'Artinskian', start:290.1, end:283.5},
+  {name:'Kungurian', start:283.5, end:273.01},
+  {name:'Roadian', start:273.01, end:266.9},
+  {name:'Wordian', start:266.9, end:264.28},
+  {name:'Capitanian', start:264.28, end:259.51},
+  {name:'Wuchiapingian', start:259.51, end:254.14},
+  {name:'Changhsingian', start:254.14, end:251.902},
+  {name:'Early Triassic', start:251.902, end:247.2, aliases:['Lower Triassic']},
+  {name:'Middle Triassic', start:247.2, end:237.0},
+  {name:'Late Triassic', start:237.0, end:201.3, aliases:['Upper Triassic']},
+  {name:'Induan', start:251.902, end:251.2},
+  {name:'Olenekian', start:251.2, end:247.2},
+  {name:'Anisian', start:247.2, end:242.0},
+  {name:'Ladinian', start:242.0, end:237.0},
+  {name:'Carnian', start:237.0, end:227.0},
+  {name:'Norian', start:227.0, end:208.5},
+  {name:'Rhaetian', start:208.5, end:201.3},
+  {name:'Early Jurassic', start:201.3, end:174.1, aliases:['Lower Jurassic']},
+  {name:'Middle Jurassic', start:174.1, end:163.5},
+  {name:'Late Jurassic', start:163.5, end:145.0, aliases:['Upper Jurassic']},
+  {name:'Hettangian', start:201.3, end:199.3},
+  {name:'Sinemurian', start:199.3, end:190.8},
+  {name:'Pliensbachian', start:190.8, end:182.7},
+  {name:'Toarcian', start:182.7, end:174.1},
+  {name:'Aalenian', start:174.1, end:170.3},
+  {name:'Bajocian', start:170.3, end:168.3},
+  {name:'Bathonian', start:168.3, end:166.1},
+  {name:'Callovian', start:166.1, end:163.5},
+  {name:'Oxfordian', start:163.5, end:157.3},
+  {name:'Kimmeridgian', start:157.3, end:152.1},
+  {name:'Tithonian', start:152.1, end:145.0},
+  {name:'Early Cretaceous', start:145.0, end:100.5, aliases:['Lower Cretaceous']},
+  {name:'Late Cretaceous', start:100.5, end:66.0, aliases:['Upper Cretaceous']},
+  {name:'Berriasian', start:145.0, end:139.8},
+  {name:'Valanginian', start:139.8, end:132.6},
+  {name:'Hauterivian', start:132.6, end:125.0},
+  {name:'Barremian', start:125.0, end:121.4},
+  {name:'Aptian', start:121.4, end:113.0},
+  {name:'Albian', start:113.0, end:100.5},
+  {name:'Cenomanian', start:100.5, end:93.9},
+  {name:'Turonian', start:93.9, end:89.8},
+  {name:'Coniacian', start:89.8, end:86.3},
+  {name:'Santonian', start:86.3, end:83.6},
+  {name:'Campanian', start:83.6, end:72.1},
+  {name:'Maastrichtian', start:72.1, end:66.0},
+  {name:'Paleocene', start:66.0, end:56.0, aliases:['Palaeocene']},
+  {name:'Eocene', start:56.0, end:33.9},
+  {name:'Oligocene', start:33.9, end:23.03},
+  {name:'Danian', start:66.0, end:61.6},
+  {name:'Selandian', start:61.6, end:59.2},
+  {name:'Thanetian', start:59.2, end:56.0},
+  {name:'Ypresian', start:56.0, end:47.8},
+  {name:'Lutetian', start:47.8, end:41.2},
+  {name:'Bartonian', start:41.2, end:37.8},
+  {name:'Priabonian', start:37.8, end:33.9},
+  {name:'Rupelian', start:33.9, end:27.82},
+  {name:'Chattian', start:27.82, end:23.03},
+  {name:'Miocene', start:23.03, end:5.333},
+  {name:'Pliocene', start:5.333, end:2.58},
+  {name:'Aquitanian', start:23.03, end:20.44},
+  {name:'Burdigalian', start:20.44, end:15.97},
+  {name:'Langhian', start:15.97, end:13.82},
+  {name:'Serravallian', start:13.82, end:11.63},
+  {name:'Tortonian', start:11.63, end:7.246},
+  {name:'Messinian', start:7.246, end:5.333},
+  {name:'Zanclean', start:5.333, end:3.6},
+  {name:'Piacenzian', start:3.6, end:2.58},
+  {name:'Gelasian', start:2.58, end:1.8},
+  {name:'Calabrian', start:1.8, end:0.774},
+  {name:'Chibanian', start:0.774, end:0.129},
+  {name:'Late Pleistocene', start:0.129, end:0.0117, aliases:['Upper Pleistocene', 'Tarantian']},
+  {name:'Greenlandian', start:0.0117, end:0.0082},
+  {name:'Northgrippian', start:0.0082, end:0.0042},
+  {name:'Meghalayan', start:0.0042, end:0},
+];
+
+function renderEraTimeline(eraValue, extant) {
+  const intervals = getActiveIntervals(eraValue, extant);
+  const matchedNames = new Set(intervals.map(i => i.name));
+  const segments = GEOLOGIC_TIMELINE.map(period => {
+    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * 100;
+    const highlights = intervals.map(interval => renderHighlight(period, interval)).join('');
+    const active = highlights.length > 0;
+    const label = `${period.name}: ${formatMa(period.start)}-${formatMa(period.end)} Ma`;
+    return `<div class="era-segment ${active ? 'active' : ''}" style="width:${width}%" title="${esc(label)}" aria-label="${esc(label)}">${highlights}</div>`;
+  }).join('');
+  const names = GEOLOGIC_TIMELINE.map(period => {
+    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * 100;
+    const active = intervals.some(interval => intervalOverlaps(period, interval));
+    return `<div class="era-name ${active ? 'active' : ''}" style="width:${width}%"><span>${esc(period.name)}</span></div>`;
+  }).join('');
+  const activeCaption = intervals.length
+    ? `Highlighted: ${esc([...matchedNames].join(', '))}`
+    : 'No matching era/epoch/stage found for this node';
+  return `
+    <div class="era-timeline">
+      <div class="era-timeline-title">Geologic timeline: Cambrian to Holocene <span>${activeCaption}</span></div>
+      <div class="era-bar-row">${segments}</div>
+      <div class="era-label-row">${names}</div>
+      <div class="era-scale"><span>${formatMa(GEOLOGIC_TIMELINE[0].start)} Ma</span><span>Present</span></div>
+    </div>`;
+}
+
+function renderHighlight(period, interval) {
+  if (!intervalOverlaps(period, interval)) return '';
+  const segmentLength = period.start - period.end;
+  const overlapStart = Math.min(period.start, interval.start);
+  const overlapEnd = Math.max(period.end, interval.end);
+  const left = ((period.start - overlapStart) / segmentLength) * 100;
+  const width = ((overlapStart - overlapEnd) / segmentLength) * 100;
+  const title = `${interval.name}: ${formatMa(interval.start)}-${formatMa(interval.end)} Ma`;
+  return `<div class="era-highlight" style="left:${left}%;width:${Math.max(width, 0.35)}%" title="${esc(title)}"></div>`;
+}
+
+function intervalOverlaps(period, interval) {
+  return interval.start > period.end && interval.end < period.start;
+}
+
+function getActiveIntervals(eraValue, extant) {
+  if (!eraValue) return [];
+  const text = normalizeEraText(eraValue);
+  let matches = [];
+  GEOLOGIC_UNITS.forEach(unit => {
+    const terms = [unit.name].concat(unit.aliases || []);
+    if (terms.some(term => containsEraTerm(text, term))) {
+      matches.push({name: unit.name, start: unit.start, end: unit.end});
+    }
+  });
+  matches = removeDuplicateIntervals(matches);
+  matches = preferSpecificIntervals(matches);
+  if (matches.length >= 2 && /\bto\b|-|\u2013|\u2014|\bthrough\b|\buntil\b|\bpresent\b/.test(text)) {
+    const oldest = Math.max(...matches.map(m => m.start));
+    const youngest = text.includes('present') || text.includes('living') || extant === true
+      ? 0
+      : Math.min(...matches.map(m => m.end));
+    return [{name: matches.map(m => m.name).join(' to '), start: oldest, end: youngest}];
+  }
+  if (extant === true && /\bpresent\b|\brecent\b|\bliving\b|\bextant\b/.test(text)) {
+    matches.push({name:'Present', start:0.0117, end:0});
+  }
+  return matches;
+}
+
+function normalizeEraText(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[()_,.;:/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function removeDuplicateIntervals(intervals) {
+  const seen = new Set();
+  return intervals.filter(interval => {
+    const key = `${interval.name}|${interval.start}|${interval.end}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function preferSpecificIntervals(intervals) {
+  if (intervals.length <= 1) return intervals;
+  const exactSpecific = intervals.filter(candidate => {
+    const duration = candidate.start - candidate.end;
+    return !intervals.some(other => {
+      if (other === candidate) return false;
+      const candidateContainsOther = candidate.start >= other.start && candidate.end <= other.end;
+      return candidateContainsOther && duration > (other.start - other.end);
+    });
+  });
+  return exactSpecific.length ? exactSpecific : intervals;
+}
+
+function escapeRegexChars(value) {
+  const specials = new Set(['.','*','+','?','^','$','{','}','(',')',']','[','|','\\']);
+  let out = '';
+  for (const ch of String(value)) out += specials.has(ch) ? '\\' + ch : ch;
+  return out;
+}
+
+function containsEraTerm(text, term) {
+  const normalizedTerm = normalizeEraText(term);
+  const escaped = normalizedTerm.split(' ').map(escapeRegexChars).join('\\s+');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(text);
+}
+
+function formatMa(value) {
+  if (value === 0) return '0';
+  if (value < 0.01) return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  if (value < 0.1)  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  if (value < 10)   return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return value.toFixed(1).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function renderMain(node, children) {
   currentNode = node;
   const el = document.getElementById('main');
@@ -740,9 +1046,16 @@ function renderMain(node, children) {
   if (node.extant === true)  badges += '<span class="badge badge-extant">Living</span>';
   if (node.extant === false) badges += '<span class="badge badge-extinct">Extinct</span>';
 
-  const desc = node.description
-    ? `<div class="node-desc">${esc(node.description)}</div>` 
-    : '<div class="node-desc" style="color:#666">No description</div>';
+  const descText = node.description ? esc(node.description) : 'No description';
+  const descClass = node.description ? 'node-desc' : 'node-desc no-description';
+  const eraText = node.era ? esc(node.era) : 'Unknown era';
+  const eraLabelClass = node.era ? 'era-label' : 'era-label unknown';
+  const desc = `
+    <div class="description-panel">
+      <div class="${eraLabelClass}" title="Era: ${eraText}">Era: ${eraText}</div>
+      <div class="${descClass}"${node.description ? '' : ' style="color:#666"'}>${descText}</div>
+      ${renderEraTimeline(node.era, node.extant)}
+    </div>`;
 
   const traits = node.traits 
     ? `<div style="margin-top:16px">

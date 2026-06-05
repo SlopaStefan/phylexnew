@@ -30,12 +30,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Disable Flask's default request logging to avoid duplicate log lines
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 # Use persistent secret key from environment or generate one
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
 
 # Security: Session configuration
+# SESSION_COOKIE_SECURE should be True in production (HTTPS), False for local development (HTTP)
+is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('WEBSITE_HOSTNAME')
 app.config.update(
-    SESSION_COOKIE_SECURE=True,  # Set True in production with HTTPS
+    SESSION_COOKIE_SECURE=is_production,  # Only require HTTPS in production
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=3600  # 1 hour timeout
@@ -47,7 +52,7 @@ app.config.update(
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS, DB_USER_RO, DB_PASS_RO
 PG_CONFIG_READONLY = {
     'host': os.environ.get('DB_HOST'),
-    'port': int(os.environ.get('DB_PORT', '5432')),
+    'port': int(os.environ.get('DB_PORT')),
     'database': os.environ.get('DB_NAME'),
     'user': os.environ.get('DB_USER_RO'),
     'password': os.environ.get('DB_PASS_RO'),
@@ -57,14 +62,13 @@ PG_CONFIG_READONLY = {
 
 PG_CONFIG_WRITE = {
     'host': os.environ.get('DB_HOST'),
-    'port': int(os.environ.get('DB_PORT', '5432')),
+    'port': int(os.environ.get('DB_PORT')),
     'database': os.environ.get('DB_NAME'),
-    'user': os.environ.get('DB_USER'),
+    'user': os.environ.get('DB_USER_RO'),
     'password': os.environ.get('DB_PASS'),
     'client_encoding': 'UTF8',
     'sslmode': 'require'
 }
-
 
 def get_client_ip():
     """Get the real client IP address, handling proxies"""
@@ -693,6 +697,8 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#0a1929; color
 .description-panel .node-desc { margin-top:0; padding-right:170px; }
 .era-label { position:absolute; top:12px; right:12px; max-width:160px; padding:5px 9px; border-radius:999px; background:#1d3a5f; color:#e6edf3; border:1px solid #2d4663; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .era-label.unknown { color:#8b949e; font-weight:600; }
+body.authenticated .era-label { cursor:pointer; transition:all 0.2s; }
+body.authenticated .era-label:hover { background:#2d4663; border-color:#667eea; }
 .era-timeline { margin-top:16px; }
 .era-timeline-title { display:flex; justify-content:space-between; gap:10px; font-size:11px; color:#8b949e; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:6px; }
 .era-timeline-title span { text-transform:none; letter-spacing:0; color:#c9d1d9; font-weight:500; text-align:right; }
@@ -976,6 +982,34 @@ function renderSidebar(crumbs) {
 
 // ?? Geologic Timeline ???????????????????????????????????????????????????????????????
 
+// Precambrian eras (will be shown as small fixed-width segments)
+const PRECAMBRIAN_ERAS = [
+  {name:'Hadean', start:4600, end:4000, aliases:['Hadean Eon']},
+  {name:'Eoarchean', start:4000, end:3600, aliases:['Eoarchaean']},
+  {name:'Paleoarchean', start:3600, end:3200, aliases:['Paleoarchaean']},
+  {name:'Mesoarchean', start:3200, end:2800, aliases:['Mesoarchaean']},
+  {name:'Neoarchean', start:2800, end:2500, aliases:['Neoarchaean']},
+  {name:'Siderian', start:2500, end:2300},
+  {name:'Rhyacian', start:2300, end:2050},
+  {name:'Orosirian', start:2050, end:1800},
+  {name:'Statherian', start:1800, end:1600},
+  {name:'Calymmian', start:1600, end:1400},
+  {name:'Ectasian', start:1400, end:1200},
+  {name:'Stenian', start:1200, end:1000},
+  {name:'Tonian', start:1000, end:720},
+  {name:'Cryogenian', start:720, end:635},
+  {name:'Ediacaran', start:635, end:538.8},
+];
+
+const PRECAMBRIAN_GENERAL = [
+  {name:'Precambrian', start:4600, end:538.8},
+  {name:'Archean', start:4000, end:2500, aliases:['Archaean']},
+  {name:'Proterozoic', start:2500, end:538.8},
+  {name:'Paleoproterozoic', start:2500, end:1600, aliases:['Palaeoproterozoic']},
+  {name:'Mesoproterozoic', start:1600, end:1000},
+  {name:'Neoproterozoic', start:1000, end:538.8},
+];
+
 const GEOLOGIC_TIMELINE = [
   {name:'Cambrian', start:538.8, end:486.85, aliases:['Cambrian Period']},
   {name:'Ordovician', start:486.85, end:443.8, aliases:['Ordovician Period']},
@@ -992,8 +1026,11 @@ const GEOLOGIC_TIMELINE = [
   {name:'Holocene', start:0.0117, end:0, aliases:['Present', 'Recent', 'Holocene Epoch']},
 ];
 const GEOLOGIC_TOTAL_MA = GEOLOGIC_TIMELINE[0].start - GEOLOGIC_TIMELINE[GEOLOGIC_TIMELINE.length - 1].end;
+const PRECAMBRIAN_FIXED_WIDTH = 8; // Fixed width percentage for Precambrian segment
 
 const GEOLOGIC_UNITS = [
+  ...PRECAMBRIAN_GENERAL,
+  ...PRECAMBRIAN_ERAS,
   {name:'Paleozoic', start:538.8, end:251.902, aliases:['Palaeozoic']},
   {name:'Mesozoic', start:251.902, end:66.0},
   {name:'Cenozoic', start:66.0, end:0, aliases:['Caenozoic']},
@@ -1138,27 +1175,46 @@ const GEOLOGIC_UNITS = [
 function renderEraTimeline(eraValue) {
   const intervals = getActiveIntervals(eraValue);
   const matchedNames = new Set(intervals.map(i => i.name));
+
+  // Check if any Precambrian eras are active
+  const hasPrecambrian = intervals.some(i => i.start > 538.8);
+
+  // Build Precambrian segment (fixed small width)
+  let precambrianHighlight = '';
+  if (hasPrecambrian) {
+    const precambrianMatches = intervals.filter(i => i.start > 538.8);
+    const precambrianLabel = precambrianMatches.map(i => i.name).join(', ');
+    precambrianHighlight = `<div class="era-highlight" style="left:0%;width:100%" title="${esc(precambrianLabel)}"></div>`;
+  }
+  const precambrianSegment = `<div class="era-segment ${hasPrecambrian ? 'active' : ''}" style="width:${PRECAMBRIAN_FIXED_WIDTH}%; flex-shrink:0;" title="Precambrian: 4600-538.8 Ma" aria-label="Precambrian: 4600-538.8 Ma">${precambrianHighlight}</div>`;
+
+  // Build regular timeline segments (scaled to remaining width)
+  const remainingWidth = 100 - PRECAMBRIAN_FIXED_WIDTH;
   const segments = GEOLOGIC_TIMELINE.map(period => {
-    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * 100;
+    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * remainingWidth;
     const highlights = intervals.map(interval => renderHighlight(period, interval)).join('');
     const active = highlights.length > 0;
     const label = `${period.name}: ${formatMa(period.start)}-${formatMa(period.end)} Ma`;
     return `<div class="era-segment ${active ? 'active' : ''}" style="width:${width}%" title="${esc(label)}" aria-label="${esc(label)}">${highlights}</div>`;
   }).join('');
+
+  // Build name labels
+  const precambrianName = `<div class="era-name ${hasPrecambrian ? 'active' : ''}" style="width:${PRECAMBRIAN_FIXED_WIDTH}%; flex-shrink:0;"><span>Precambrian</span></div>`;
   const names = GEOLOGIC_TIMELINE.map(period => {
-    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * 100;
+    const width = ((period.start - period.end) / GEOLOGIC_TOTAL_MA) * remainingWidth;
     const active = intervals.some(interval => intervalOverlaps(period, interval));
     return `<div class="era-name ${active ? 'active' : ''}" style="width:${width}%"><span>${esc(period.name)}</span></div>`;
   }).join('');
+
   const activeCaption = intervals.length
     ? `Highlighted: ${esc([...matchedNames].join(', '))}`
     : 'No matching era/epoch/stage found for this node';
   return `
     <div class="era-timeline">
-      <div class="era-timeline-title">Geologic timeline: Cambrian to Holocene <span>${activeCaption}</span></div>
-      <div class="era-bar-row">${segments}</div>
-      <div class="era-label-row">${names}</div>
-      <div class="era-scale"><span>${formatMa(GEOLOGIC_TIMELINE[0].start)} Ma</span><span>Present</span></div>
+      <div class="era-timeline-title">Geologic timeline: Precambrian to Present <span>${activeCaption}</span></div>
+      <div class="era-bar-row">${precambrianSegment}${segments}</div>
+      <div class="era-label-row">${precambrianName}${names}</div>
+      <div class="era-scale"><span>4600 Ma</span><span>Cambrian</span><span>Present</span></div>
     </div>`;
 }
 
@@ -1266,7 +1322,7 @@ function renderMain(node, children) {
   const eraLabelClass = node.era ? 'era-label' : 'era-label unknown';
   const desc = `
     <div class="description-panel">
-      <div class="${eraLabelClass}" title="Era: ${eraText}">Era: ${eraText}</div>
+      <div class="${eraLabelClass}" title="Era: ${eraText}" onclick="editEra()">Era: ${eraText}</div>
       <div class="${descClass}"${node.description ? '' : ' style="color:#666"'}>${descText}</div>
       ${renderEraTimeline(node.era)}
     </div>`;
@@ -1444,6 +1500,22 @@ async function editDescription() {
   } catch(e) { tbStatus('Error: ' + e.message, false); }
 }
 
+async function editEra() {
+  if (!currentNode) return;
+  const era = prompt('Edit era/period for ' + currentNode.name + '\\n\\nExamples: Jurassic, Cretaceous, Paleozoic, Archean, Proterozoic', currentNode.era || '');
+  if (era === null) return;
+  try {
+    const r = await fetch('/api/edit-era/' + currentNode.id, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({era: era.trim()})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    tbStatus('Era updated to "' + d.era + '"', true);
+    navigate(currentNode.id);
+  } catch(e) { tbStatus('Error: ' + e.message, false); }
+}
+
 async function deleteCurrentNode() {
   if (!currentNode) return;
   if (!confirm('Delete node "' + currentNode.name + '"? Only leaf nodes can be deleted.')) return;
@@ -1567,6 +1639,16 @@ async function doLogin() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({username, password})
     });
+
+    // Check if response is JSON before parsing
+    const contentType = r.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await r.text();
+      errorEl.textContent = 'Server error: Invalid response format';
+      console.error('Non-JSON response:', text);
+      return;
+    }
+
     const d = await r.json();
 
     if (!r.ok) {
@@ -1579,6 +1661,7 @@ async function doLogin() {
     tbStatus('Logged in as ' + d.username, true);
   } catch(e) {
     errorEl.textContent = 'Login error: ' + e.message;
+    console.error('Login error:', e);
   }
 }
 
@@ -2284,6 +2367,34 @@ def api_edit(node_id):
     updated_node = get_node_from_db(node_id)
     return jsonify(node_dict(updated_node))
 
+@app.route("/api/edit-era/<node_id>", methods=["POST"])
+@require_auth('editor')
+def api_edit_era(node_id):
+    """Edit node era"""
+    node_row = get_node_from_db(node_id)
+    if not node_row:
+        return jsonify({"error": "not found"}), 404
+
+    data = request.get_json() or {}
+    era = (data.get("era") or "").strip()
+
+    try:
+        # Update in PostgreSQL
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE clades SET era = %s WHERE node_id = %s", (era, node_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        node_name = node_row['node_name']
+        audit_log('EDIT_ERA', f'Node={node_name}[{node_id[:8]}...], Era={era}', status='SUCCESS')
+    except Exception as e:
+        audit_log('EDIT_ERA', f'Node={node_id[:8]}... ERROR={str(e)}', status='ERROR')
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"id": node_id, "era": era})
+
 @app.route("/api/rename/<node_id>", methods=["POST"])
 @require_auth('editor')
 def api_rename(node_id):
@@ -2501,6 +2612,25 @@ def api_delete(node_id):
     audit_log('DELETE_NODE', f'Name={name}, ID={node_id[:8]}...', status='SUCCESS')
 
     return jsonify({"deleted_id": node_id, "deleted_name": name, "parent_id": parent_id})
+
+@app.route("/favicon.ico")
+def favicon():
+    """Return empty favicon to avoid 404 errors"""
+    return Response(status=204)  # 204 No Content
+
+@app.before_request
+def log_request_start():
+    """Log request start time for API endpoints"""
+    request.start_time = time.time()
+
+@app.after_request
+def log_request_end(resp):
+    """Log request completion time with single line output"""
+    if hasattr(request, 'start_time'):
+        duration_ms = (time.time() - request.start_time) * 1000
+        # Log all requests with timing on a single line
+        logger.info(f"{request.remote_addr} {request.method} {request.path} - {resp.status_code} - {duration_ms:.1f}ms")
+    return resp
 
 @app.after_request
 def add_security_headers(resp):

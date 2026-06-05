@@ -65,8 +65,8 @@ The app starts at "Life" - the root of all living things.
 Each organism card shows:
 - **Name** - Scientific classification (e.g., "Canis lupus")
 - **Description** - What it is and key facts
-- **Traits** - Evolutionary features
-- **Status** - Living or Extinct badge
+- **Eras** - WHen a clade appeared
+- **Timescale** - Highlighted in red the lifespan of the clade
 - **Children** - Number of sub-classifications
 - **Path Badge** - Green highlight if on the path to Homo sapiens
 
@@ -131,12 +131,12 @@ The app works also on phones:
 ## Database Information
 
 Current database contains:
-- 27,728 total organisms and classifications
-- 68 nodes on the direct evolutionary path to Homo sapiens
+- ~27,800 total organisms and classifications
+- 75 nodes on the direct evolutionary path to Homo sapiens
 - All major biological kingdoms
 - Descriptions and traits for most organisms
 - Both extinct and living species
-- Very small size: ~4MB with few descriptions, ~9MB with most descriptions
+- Very small size: ~4MB with few descriptions, ~10MB with most descriptions
 
 ---
 
@@ -213,5 +213,6 @@ MIT License - Free to use, modify, and distribute
 
 ## Credits
 
+This python app is made by Slopa, 2026
 Built with Flask, PostgreSQL, and Azure App Service
-Data compiled from biological classification sources
+Data compiled from biological classification sources (Wikipedia & NCBI) based on a mongodb dump of AronRA's PhylEX corrupted data.

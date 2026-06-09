@@ -2192,7 +2192,7 @@ def api_export():
 
         cursor.execute("""
             SELECT c1.node_id, c1.node_name, c1.parent_id, c2.node_name as parent_name,
-                   c1.description
+                   c1.description, c1.era
             FROM clades c1
             LEFT JOIN clades c2 ON c1.parent_id = c2.node_id
             ORDER BY c1.node_name
@@ -2204,7 +2204,7 @@ def api_export():
 
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow(["node_id", "node_name", "parent_id", "parent_name", "description"])
+        w.writerow(["node_id", "node_name", "parent_id", "parent_name", "description", "era"])
 
         for row in rows:
             w.writerow([
@@ -2212,7 +2212,8 @@ def api_export():
                 (row['node_name'] or "").strip(),
                 row['parent_id'] or "",
                 (row['parent_name'] or "").strip(),
-                (row['description'] or "").strip()
+                (row['description'] or "").strip(),
+                (row['era'] or "").strip()
             ])
 
         return Response(
@@ -2484,11 +2485,11 @@ def api_restore():
         if not file.filename.endswith('.csv'):
             return jsonify({"error": "File must be a CSV"}), 400
 
-        # Security: File size limit (10MB)
+        # Security: File size limit (100MB)
         file.seek(0, os.SEEK_END)
         file_size = file.tell()
-        if file_size > 10 * 1024 * 1024:
-            return jsonify({"error": "File too large (max 10MB)"}), 400
+        if file_size > 100 * 1024 * 1024:
+            return jsonify({"error": "File too large (max 100MB)"}), 400
         file.seek(0)
 
         # Read CSV content
@@ -2529,6 +2530,7 @@ def api_restore():
             node_name = row['node_name'].strip()
             parent_id = row['parent_id'].strip() if row['parent_id'].strip() else None
             description = row.get('description', '').strip() or None
+            era = row.get('era', '').strip() or None
 
             # Security: Validate inputs
             if not validate_node_id(node_id):
@@ -2544,13 +2546,14 @@ def api_restore():
                 return jsonify({"error": f"Invalid parent_id format: {parent_id[:50]}"}), 400
 
             cursor.execute("""
-                INSERT INTO clades (node_id, node_name, parent_id, description)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO clades (node_id, node_name, parent_id, description, era)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (node_id) DO UPDATE SET
                     node_name = EXCLUDED.node_name,
                     parent_id = EXCLUDED.parent_id,
-                    description = EXCLUDED.description
-            """, (node_id, node_name, parent_id, description))
+                    description = EXCLUDED.description,
+                    era = EXCLUDED.era
+            """, (node_id, node_name, parent_id, description, era))
 
             rows_imported += 1
 

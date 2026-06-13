@@ -402,14 +402,14 @@ def get_path_to_root(node_id):
     cursor = conn.cursor()
 
     cursor.execute("""
-      WITH RECURSIVE path(node_id, node_name, parent_id, depth) AS (
-        SELECT node_id, node_name, parent_id, 0 FROM clades WHERE node_id = %s
+      WITH RECURSIVE path(node_id, node_name, parent_id, description, era, depth) AS (
+        SELECT node_id, node_name, parent_id, description, era, 0 FROM clades WHERE node_id = %s
         UNION ALL
-        SELECT c.node_id, c.node_name, c.parent_id, path.depth + 1
+        SELECT c.node_id, c.node_name, c.parent_id, c.description, c.era, path.depth + 1
         FROM clades c
         JOIN path ON c.node_id = path.parent_id
       )
-      SELECT node_id, node_name, parent_id
+      SELECT node_id, node_name, parent_id, description, era
       FROM path
       ORDER BY depth
     """, (node_id,))

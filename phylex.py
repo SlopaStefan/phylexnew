@@ -730,6 +730,13 @@ body:not(.authenticated) .node-actions { display:none; }
 body.authenticated .node-actions { display:flex; }
 body.authenticated #exportCSVHeaderBtn { display:none; }
 .node-actions .btn-delete { margin-left:auto; }
+# Mobile breadcrumb and parent info
+.breadcrumb-mobile { display:none; gap:8px; margin-bottom:12px; }
+.parent-btn { padding:8px 10px; border-radius:6px; font-size:13px; }
+.parent-info-panel { position:fixed; left:8px; right:8px; bottom:16px; background:#13294b; border:1px solid #1d3a5f; padding:12px; border-radius:8px; box-shadow:0 6px 24px rgba(0,0,0,0.5); z-index:1200; display:none; }
+.parent-info-panel .p-title { font-weight:700; color:#e6edf3; margin-bottom:6px; }
+.parent-info-panel .p-desc { color:#c9d1d9; font-size:13px; max-height:160px; overflow:auto; margin-bottom:8px; }
+.parent-info-panel .p-actions { display:flex; gap:8px; }
 #restoreFileInput { display:none; }
 .btn-admin { background:#9f7aea; color:white; }
 .btn-admin:hover { background:#805ad5; }
@@ -798,6 +805,7 @@ body.authenticated #exportCSVHeaderBtn { display:none; }
 
   .children-title { font-size:15px; margin-bottom:10px; margin-top:16px; }
   .children-grid { grid-template-columns:1fr; gap:10px; padding-bottom:80px; }
+  .breadcrumb-mobile { display:flex; }
   .child-card { padding:12px; }
   .child-name { font-size:13px; }
   .child-meta { font-size:11px; }
@@ -1331,7 +1339,14 @@ function renderMain(node, children) {
 
   const safeName = esc(node.name).replace(/\\n/g, ' ');
   const safeId = esc(node.id).replace(/\\n/g, '');
+  // Mobile breadcrumb with parent button and info
+  let parentBreadcrumb = '';
+  if (node.parent_id) {
+    const pname = esc(node.parent_name || '').replace(/\\n/g, ' ');
+    parentBreadcrumb = `<div class="breadcrumb-mobile"><button class="tb-btn parent-btn" onclick="navigate('${node.parent_id}')">Parent: ${pname}</button><button class="tb-btn parent-info-btn" onclick="showParentInfo('${node.parent_id}')">Info</button></div>`;
+  }
   let html = `
+    ${parentBreadcrumb}
     <div class="${hdrCls}">
       <div class="${titleCls}">${safeName}</div>
       ${badges ? `<div class="badges">${badges}</div>` : ''}
@@ -1710,6 +1725,41 @@ async function navigateToHomoSapiens() {
   } catch(e) {
     console.error('Error navigating to Homo sapiens:', e);
   }
+}
+
+// Show parent node info in a mobile-friendly panel (fetch description)
+async function showParentInfo(parentId) {
+  try {
+    const p = await get('/api/node/' + parentId);
+    const panelId = 'parentInfoPanel';
+    let panel = document.getElementById(panelId);
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = panelId;
+      panel.className = 'parent-info-panel';
+      document.body.appendChild(panel);
+    }
+
+    const name = esc(p.name || '');
+    const desc = p.description ? esc(p.description).replace(/\\n/g, '<br>') : 'No description';
+
+    panel.innerHTML = `
+      <div class="p-title">${name}</div>
+      <div class="p-desc">${desc}</div>
+      <div class="p-actions">
+        <button class="tb-btn btn-move" onclick="(function(){ navigate('${parentId}'); hideParentInfo(); })()">Go to parent</button>
+        <button class="tb-btn btn-restore" onclick="hideParentInfo()">Close</button>
+      </div>
+    `;
+    panel.style.display = 'block';
+  } catch(e) {
+    console.error('Error loading parent info:', e);
+  }
+}
+
+function hideParentInfo() {
+  const panel = document.getElementById('parentInfoPanel');
+  if (panel) panel.style.display = 'none';
 }
 
 // ?? View Mode Toggle ????????????????????????????????????????????????????????????

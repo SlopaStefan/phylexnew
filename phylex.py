@@ -391,37 +391,36 @@ def get_batch_child_counts(node_ids):
         return {nid: 0 for nid in node_ids}
 
 def get_path_to_root(node_id):
-    """Get path from node to root"""
-    try:
-        conn = get_db(readonly=True)
-        cursor = conn.cursor()
+  """Get path from node to root using a single recursive CTE (node -> parent -> ...).
 
-        path = []
-        current_id = node_id
-        seen = set()
-        max_depth = 100  # Prevent infinite loops
+  Returns a list of rows in the same order as the previous implementation
+  (starting with the given node, then its parent, etc.). This reduces many
+  round-trips when walking long paths.
+  """
+  try:
+    conn = get_db(readonly=True)
+    cursor = conn.cursor()
 
-        while current_id and current_id not in seen and len(path) < max_depth:
-            cursor.execute("""
-                SELECT node_id, node_name, parent_id
-                FROM clades
-                WHERE node_id = %s
-            """, (current_id,))
-            row = cursor.fetchone()
+    cursor.execute("""
+      WITH RECURSIVE path(node_id, node_name, parent_id, depth) AS (
+        SELECT node_id, node_name, parent_id, 0 FROM clades WHERE node_id = %s
+        UNION ALL
+        SELECT c.node_id, c.node_name, c.parent_id, path.depth + 1
+        FROM clades c
+        JOIN path ON c.node_id = path.parent_id
+      )
+      SELECT node_id, node_name, parent_id
+      FROM path
+      ORDER BY depth
+    """, (node_id,))
 
-            if not row:
-                break
-
-            seen.add(current_id)
-            path.append(row)
-            current_id = row['parent_id']
-
-        cursor.close()
-        conn.close()
-        return path
-    except Exception as e:
-        logger.error(f"Error getting path to root from {node_id}: {e}")
-        return []
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows or []
+  except Exception as e:
+    logger.error(f"Error getting path to root from {node_id}: {e}")
+    return []
 
 def is_on_homo_path(node_id):
     """Check if node is on path to Homo sapiens"""
@@ -556,7 +555,7 @@ def require_auth(min_role='editor'):
         return wrapped
     return decorator
 
-def node_dict(node_row, skip_child_count=False, skip_path_check=False):
+def node_dict(node_row, skip_child_count=False, skip_path_check=False, parent_lookup=None):
     """Convert database row to API response format
 
     Args:
@@ -570,12 +569,15 @@ def node_dict(node_row, skip_child_count=False, skip_path_check=False):
     cid = node_row['node_id']
     pid = node_row['parent_id'] or ""
 
-    # Get parent name if parent exists
+    # Get parent name if parent exists. Use parent_lookup dict if provided
     parent_name = ""
     if pid:
+      if parent_lookup and pid in parent_lookup:
+        parent_name = parent_lookup[pid]
+      else:
         parent_row = get_node_from_db(pid)
         if parent_row:
-            parent_name = (parent_row['node_name'] or "").strip()
+          parent_name = (parent_row['node_name'] or "").strip()
 
     # Count children (expensive operation - can be skipped)
     if skip_child_count:
@@ -2091,23 +2093,50 @@ def api_focus(node_id):
         node_id = root_id
         node_row = get_node_from_db(node_id)
 
-    # Build breadcrumb from root to this node
-    path = get_path_to_root(node_id)
-    crumbs = [row['node_id'] for row in path]
+    # Get full path (node -> parent -> ...)
+    path_rows = get_path_to_root(node_id)
+    crumbs = [row['node_id'] for row in path_rows]
     crumbs.reverse()
 
     if not crumbs:
         return jsonify({"error": "not found"}), 404
 
-    # Build levels for each ancestor in the path
+    # Build a lookup for parent names to avoid extra queries in node_dict
+    parent_lookup = {row['node_id']: (row.get('node_name') or "").strip() for row in path_rows}
+
+    # Fetch children for all parents in the path with a single query
+    children_rows_all = []
+    if crumbs:
+        try:
+            conn = get_db(readonly=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT parent_id, node_id, node_name
+                FROM clades
+                WHERE parent_id = ANY(%s)
+                ORDER BY parent_id, node_name
+            """, (list(crumbs),))
+            children_rows_all = cursor.fetchall()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error fetching children for focus: {e}")
+
+    # Group children by parent
+    children_map = defaultdict(list)
+    all_child_ids = []
+    for r in children_rows_all:
+        children_map[r['parent_id']].append(r)
+        all_child_ids.append(r['node_id'])
+
+    # Batch child counts and path checks for all children
+    child_counts = get_batch_child_counts(all_child_ids) if all_child_ids else {}
+    path_check = check_nodes_on_homo_path(all_child_ids) if all_child_ids else {}
+
+    # Build levels
     levels = []
     for i, cid in enumerate(crumbs):
-        children_rows = get_children_from_db(cid)
-
-        # Batch operations for all children at this level
-        child_ids = [child_row['node_id'] for child_row in children_rows]
-        child_counts = get_batch_child_counts(child_ids)
-        path_check = check_nodes_on_homo_path(child_ids)
+        children_rows = children_map.get(cid, [])
 
         children = []
         for child_row in children_rows:
@@ -2119,21 +2148,23 @@ def api_focus(node_id):
                 "on_path": path_check.get(child_id, False),
                 "selected": (i + 1 < len(crumbs) and crumbs[i + 1] == child_id)
             })
-        # Sort: nodes with children first, then leaves
+
+        # Sort: nodes with children first, then leaves; alphabetical within groups
         children.sort(key=lambda x: (x["child_count"] == 0, x["name"].lower()))
 
-        parent_row = get_node_from_db(cid)
+        # Parent row is available in path_rows; find it without extra DB calls
+        parent_row = next((r for r in path_rows if r['node_id'] == cid), None)
         levels.append({
-            "parent": node_dict(parent_row),
+            "parent": node_dict(parent_row, skip_child_count=True, parent_lookup=parent_lookup) if parent_row else None,
             "expanded_child_id": crumbs[i + 1] if i + 1 < len(crumbs) else None,
             "nodes": children
         })
 
-    root_row = get_node_from_db(crumbs[0])
+    root_row = next((r for r in path_rows if r['node_id'] == crumbs[0]), get_node_from_db(crumbs[0]))
     return jsonify({
-        "root": node_dict(root_row),
-        "focus": node_dict(node_row),
-        "breadcrumb": [node_dict(get_node_from_db(cid)) for cid in crumbs],
+        "root": node_dict(root_row, parent_lookup=parent_lookup),
+        "focus": node_dict(node_row, parent_lookup=parent_lookup),
+        "breadcrumb": [node_dict(next((r for r in path_rows if r['node_id'] == cid), get_node_from_db(cid)), parent_lookup=parent_lookup) for cid in crumbs],
         "levels": levels
     })
 

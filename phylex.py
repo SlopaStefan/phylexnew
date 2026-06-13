@@ -2133,6 +2133,10 @@ def api_focus(node_id):
     child_counts = get_batch_child_counts(all_child_ids) if all_child_ids else {}
     path_check = check_nodes_on_homo_path(all_child_ids) if all_child_ids else {}
 
+    # Batch parent child counts and path checks for the crumb nodes (parents)
+    parent_child_counts = get_batch_child_counts(crumbs) if crumbs else {}
+    parent_path_check = check_nodes_on_homo_path(crumbs) if crumbs else {}
+
     # Build levels
     levels = []
     for i, cid in enumerate(crumbs):
@@ -2154,18 +2158,50 @@ def api_focus(node_id):
 
         # Parent row is available in path_rows; find it without extra DB calls
         parent_row = next((r for r in path_rows if r['node_id'] == cid), None)
+        if parent_row:
+          parent_obj = node_dict(parent_row, skip_child_count=True, parent_lookup=parent_lookup)
+          # Inject child_count and on_path from batched results
+          parent_obj['child_count'] = parent_child_counts.get(cid, 0)
+          parent_obj['on_path'] = parent_path_check.get(cid, False)
+        else:
+          parent_obj = None
+
         levels.append({
-            "parent": node_dict(parent_row, skip_child_count=True, parent_lookup=parent_lookup) if parent_row else None,
-            "expanded_child_id": crumbs[i + 1] if i + 1 < len(crumbs) else None,
-            "nodes": children
+          "parent": parent_obj,
+          "expanded_child_id": crumbs[i + 1] if i + 1 < len(crumbs) else None,
+          "nodes": children
         })
 
     root_row = next((r for r in path_rows if r['node_id'] == crumbs[0]), get_node_from_db(crumbs[0]))
+
+    # Build root, focus, and breadcrumb objects while avoiding extra DB calls
+    root_obj = node_dict(root_row, skip_child_count=True, parent_lookup=parent_lookup) if root_row else None
+    if root_obj:
+      root_obj['child_count'] = parent_child_counts.get(root_obj['id'], 0)
+      root_obj['on_path'] = parent_path_check.get(root_obj['id'], False)
+
+    focus_obj = node_dict(node_row, skip_child_count=True, parent_lookup=parent_lookup) if node_row else None
+    if focus_obj:
+      focus_obj['child_count'] = parent_child_counts.get(focus_obj['id'], 0)
+      focus_obj['on_path'] = parent_path_check.get(focus_obj['id'], False)
+
+    breadcrumb_objs = []
+    for cid in crumbs:
+      crumb_row = next((r for r in path_rows if r['node_id'] == cid), None)
+      if crumb_row:
+        crumb_obj = node_dict(crumb_row, skip_child_count=True, parent_lookup=parent_lookup)
+        crumb_obj['child_count'] = parent_child_counts.get(cid, 0)
+        crumb_obj['on_path'] = parent_path_check.get(cid, False)
+        breadcrumb_objs.append(crumb_obj)
+      else:
+        # Fallback: minimal object
+        breadcrumb_objs.append({"id": cid, "name": "", "child_count": 0, "on_path": False})
+
     return jsonify({
-        "root": node_dict(root_row, parent_lookup=parent_lookup),
-        "focus": node_dict(node_row, parent_lookup=parent_lookup),
-        "breadcrumb": [node_dict(next((r for r in path_rows if r['node_id'] == cid), get_node_from_db(cid)), parent_lookup=parent_lookup) for cid in crumbs],
-        "levels": levels
+      "root": root_obj,
+      "focus": focus_obj,
+      "breadcrumb": breadcrumb_objs,
+      "levels": levels
     })
 
 @app.route("/api/search")
